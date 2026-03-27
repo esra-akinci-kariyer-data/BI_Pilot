@@ -3,6 +3,141 @@ import pandas as pd
 import re
 import streamlit as st
 
+st.set_page_config(page_title="Raportal Agent PoC", layout="wide")
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+
+# API Key Authentication with Google Gemini
+def check_authentication():
+    """Check if user provided Google Gemini API key"""
+    if "api_key" not in st.session_state:
+        st.session_state.api_key = None
+    
+    with st.sidebar:
+        st.markdown("<h2 style='text-align: center; color: #5b1fa6;'>Raportal Agent PoC</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #666;'>Ayarlar</p>", unsafe_allow_html=True)
+        
+        if not st.session_state.api_key:
+            api_key = st.text_input(
+                "Google Gemini API Key:",
+                type="password",
+                placeholder="https://aistudio.google.com",
+            )
+            
+            if st.button("Bağlan", type="primary", use_container_width=True):
+                if api_key.strip():
+                    try:
+                        genai.configure(api_key=api_key)
+                        # API key'i test et: model listesi alıp en az 1 model açık mı bak
+                        available_models = list_models()
+                        if not available_models:
+                            st.warning("Model listesi alınamadı. Manuel giriş gerekecek.")
+                            st.session_state.api_key = api_key
+                            st.session_state.available_models = []
+                            st.session_state.selected_model = "gemini-1"
+                            st.session_state.manual_model = "gemini-1"
+                        else:
+                            st.session_state.api_key = api_key
+                            st.session_state.available_models = available_models
+                            st.session_state.selected_model = available_models[0]
+                            st.success(f"API Key doğrulandı.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ API Key Hatası: {str(e)}")
+                else:
+                    st.error("❌ Lütfen API Key girin")
+        else:
+            st.success("✅ API Key Doğrulandı")
+            if st.button("Çıkış Yap / Sıfırla", use_container_width=True):
+                st.session_state.api_key = None
+                st.session_state.available_models = []
+                st.rerun()
+
+if genai is None:
+    st.error("google-generativeai paketi kurulmamış. Lütfen terminalde şu komutu çalıştırın:\n`pip install google-generativeai`")
+    st.stop()
+
+
+@st.cache_data
+def list_models():
+    if genai is None:
+        raise RuntimeError("google.generativeai paketi yüklenmedi.")
+
+    try:
+        response = genai.list_models()
+        if isinstance(response, dict):
+            model_list = response.get("models", [])
+            return [m.get("name") for m in model_list if m.get("name")]
+        elif isinstance(response, list):
+            return [m.name if hasattr(m, 'name') else str(m) for m in response]
+        else:
+            return []
+    except Exception as e:
+        raise RuntimeError(f"Model listesi alınamadı: {e}") from e
+
+
+@st.cache_data
+def generate_ai_recommendation(query: str, reports: list, model_name: str) -> str:
+    """Use Gemini AI to generate personalized recommendation"""
+    try:
+        model = genai.GenerativeModel(model_name)
+
+        reports_text = "\n".join([
+            f"- {r['name']} ({r['topic']}): {r['why']}"
+            for r in reports
+        ])
+
+        prompt = f"""
+        Kullanıcı sorgusu: "{query}"
+
+        Önerilen raporlar:
+        {reports_text}
+
+        Lütfen Türkçe olarak, bu raporların kullanıcının ihtiyacını nasıl karşıladığını kısa ve öz bir şekilde açıklayınız (2-3 cümle).
+        """
+
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI açıklama alınamadı: {str(e)}"
+
+
+check_authentication()
+
+if st.session_state.api_key:
+    genai.configure(api_key=st.session_state.api_key)
+    
+    # Model seçimi (Sidebar içinde)
+    with st.sidebar:
+        st.markdown("### Model Seçimi")
+        model_options = st.session_state.get("available_models", [])
+        
+        if not model_options:
+            model_options = ["gemini-1", "gemini-1.5", "gemini-1.5-pro", "gemini-2-lite"]
+            
+        with st.expander("Gelişmiş Seçenekler"):
+            manual_model_input = st.text_input(
+                "Manuel model adı",
+                value=st.session_state.get("manual_model", ""),
+                placeholder="Örn. gemini-1.5-pro"
+            ).strip()
+            if manual_model_input:
+                st.session_state.manual_model = manual_model_input
+                if manual_model_input not in model_options:
+                    model_options.insert(0, manual_model_input)
+                    
+        if "selected_model" in st.session_state and st.session_state.selected_model in model_options:
+            default_index = model_options.index(st.session_state.selected_model)
+        else:
+            default_index = 0
+            
+        selected_model = st.selectbox("Kullanılacak model", model_options, index=default_index)
+        st.session_state.selected_model = selected_model
+
 
 CUSTOM_CSS = """
 <style>
@@ -253,11 +388,43 @@ def search_reports(df: pd.DataFrame, query: str, col_map: dict):
     return results[:3]
 
 
-st.set_page_config(page_title="Raportal Agent PoC", layout="wide")
+@st.cache_data
+def generate_ai_recommendation(query: str, reports: list, model_name: str) -> str:
+    """Use Gemini AI to generate personalized recommendation"""
+    if model_name is None or model_name.strip() == "":
+        model_name = "gemini-pro"
+
+    try:
+        model = genai.GenerativeModel(model_name)
+
+        reports_text = "\n".join([
+            f"- {r['name']} ({r['topic']}): {r['why']}"
+            for r in reports
+        ])
+
+        prompt = f"""
+        Kullanıcı sorgusu: "{query}"
+
+        Önerilen raporlar:
+        {reports_text}
+
+        Lütfen Türkçe olarak, bu raporların kullanıcının ihtiyacını nasıl karşıladığını kısa ve öz bir şekilde açıklayınız (2-3 cümle).
+        """
+
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI açıklama alınamadı: {str(e)}"
+
+
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 st.title("Raportal Agent PoC")
-st.caption("Kullanıcı ihtiyacına göre en uygun raporu öneren pilot ekran")
+st.caption("Kullanıcı ihtiyacına göre en uygun raporu öneren pilot ekran - AI destekli")
+
+if not st.session_state.api_key:
+    st.info("👋 Lütfen kenar çubuğundan (sol menü) API anahtarınızı girerek bağlanın.")
+    st.stop()
 
 try:
     df, source_name = load_metadata()
@@ -271,6 +438,8 @@ with c1:
     st.success(f"Metadata yüklendi: {source_name}")
 with c2:
     st.info(f"Pilot rapor sayısı: {len(df)}")
+
+selected_model = st.session_state.get("selected_model", "gemini-1")
 
 st.markdown("### Hazır örnek sorular")
 
@@ -310,6 +479,11 @@ if st.button("Rapor Öner", type="primary"):
         if not matches:
             st.error("Uygun rapor bulunamadı.")
         else:
+            with st.spinner("AI tarafından analiz ediliyor..."):
+                ai_explanation = generate_ai_recommendation(query, matches, selected_model)
+
+            st.info(f"**AI Açıklaması:** {ai_explanation}")
+            
             st.subheader("Önerilen Raporlar")
 
             for i, m in enumerate(matches, start=1):
