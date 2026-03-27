@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 import re
 import streamlit as st
+import types
 
 st.set_page_config(page_title="Raportal Agent PoC", layout="wide")
 
@@ -67,13 +68,23 @@ def list_models():
     if genai is None:
         raise RuntimeError("google.generativeai paketi yüklenmedi.")
 
+    # API key'i kontrol et ve yapılandır
+    api_key = st.session_state.get("api_key")
+    if api_key:
+        genai.configure(api_key=api_key)
+
     try:
         response = genai.list_models()
+
+        # google.generativeai 0.8.6 returns generator
+        if isinstance(response, types.GeneratorType):
+            response = list(response)
+
         if isinstance(response, dict):
             model_list = response.get("models", [])
             return [m.get("name") for m in model_list if m.get("name")]
         elif isinstance(response, list):
-            return [m.name if hasattr(m, 'name') else str(m) for m in response]
+            return [m.get("name") if isinstance(m, dict) else (m.name if hasattr(m, 'name') else str(m)) for m in response]
         else:
             return []
     except Exception as e:
