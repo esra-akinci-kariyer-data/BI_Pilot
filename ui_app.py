@@ -385,11 +385,6 @@ def check_authentication():
             selected_model = st.selectbox("Kullanılacak model", model_options, index=default_index, key="sidebar_model_select")
             st.session_state.selected_model = selected_model
 
-            if st.button("Çıkış Yap / Sıfırla", use_container_width=True):
-                st.session_state.api_key = None
-                st.session_state.available_models = []
-                st.rerun()
-
             st.markdown('<div class="sidebar-menu-section">', unsafe_allow_html=True)
             st.markdown(
                 """
@@ -405,37 +400,17 @@ def check_authentication():
             )
             st.markdown('</div>', unsafe_allow_html=True)
 
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            if st.button("Çıkış Yap / Sıfırla", use_container_width=True):
+                st.session_state.api_key = None
+                st.session_state.available_models = []
+                st.rerun()
+
 
 check_authentication()
 
 if st.session_state.api_key:
     genai.configure(api_key=st.session_state.api_key)
-
-    with st.sidebar:
-        st.markdown("### Model Seçimi")
-        model_options = st.session_state.get("available_models", [])
-
-        if not model_options:
-            model_options = ["gemini-1", "gemini-1.5", "gemini-1.5-pro", "gemini-2-lite"]
-
-        with st.expander("Gelişmiş Seçenekler"):
-            manual_model_input = st.text_input(
-                "Manuel model adı",
-                value=st.session_state.get("manual_model", ""),
-                placeholder="Örn. gemini-1.5-pro",
-            ).strip()
-            if manual_model_input:
-                st.session_state.manual_model = manual_model_input
-                if manual_model_input not in model_options:
-                    model_options.insert(0, manual_model_input)
-
-        if "selected_model" in st.session_state and st.session_state.selected_model in model_options:
-            default_index = model_options.index(st.session_state.selected_model)
-        else:
-            default_index = 0
-
-        selected_model = st.selectbox("Kullanılacak model", model_options, index=default_index)
-        st.session_state.selected_model = selected_model
 
 
 def normalize_text(text: str) -> str:
