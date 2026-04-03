@@ -32,8 +32,27 @@ APP_CSS = """
         border-right: none !important;
     }
 
-    section[data-testid="stSidebar"] * {
+    section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+    section[data-testid="stSidebar"] input,
+    section[data-testid="stSidebar"] textarea {
+        background-color: #ffffff !important;
+        color: #1a1a1a !important;
+        border-radius: 10px !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stExpander"] {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        border-radius: 12px !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stExpander"] * {
         color: #ffffff !important;
+    }
+
+    /* Menu Separation */
+    .sidebar-menu-section {
+        margin-top: 2rem;
     }
 
     .sidebar-brand {
@@ -43,6 +62,7 @@ APP_CSS = """
         font-weight: 800;
         font-size: 1.4rem;
         letter-spacing: -0.01em;
+        color: #ffffff !important;
     }
 
     .sidebar-menu-item {
@@ -337,12 +357,40 @@ def check_authentication():
                     st.error("❌ Lütfen API Key girin")
         else:
             st.success("✅ Bağlantı Aktif")
+
+            # Model selection right after branding
+            st.markdown("### Model Seçimi")
+            model_options = st.session_state.get("available_models", [])
+
+            if not model_options:
+                model_options = ["gemini-1", "gemini-1.5", "gemini-1.5-pro", "gemini-2-lite"]
+
+            with st.expander("Gelişmiş Seçenekler"):
+                manual_model_input = st.text_input(
+                    "Manuel model adı",
+                    value=st.session_state.get("manual_model", ""),
+                    placeholder="Örn. gemini-1.5-pro",
+                    key="sidebar_manaul_model"
+                ).strip()
+                if manual_model_input:
+                    st.session_state.manual_model = manual_model_input
+                    if manual_model_input not in model_options:
+                        model_options.insert(0, manual_model_input)
+
+            if "selected_model" in st.session_state and st.session_state.selected_model in model_options:
+                default_index = model_options.index(st.session_state.selected_model)
+            else:
+                default_index = 0
+
+            selected_model = st.selectbox("Kullanılacak model", model_options, index=default_index, key="sidebar_model_select")
+            st.session_state.selected_model = selected_model
+
             if st.button("Çıkış Yap / Sıfırla", use_container_width=True):
                 st.session_state.api_key = None
                 st.session_state.available_models = []
                 st.rerun()
 
-            st.markdown("<br><hr style='border-color: rgba(255,255,255,0.2)'><br>", unsafe_allow_html=True)
+            st.markdown('<div class="sidebar-menu-section">', unsafe_allow_html=True)
             st.markdown(
                 """
                 <div class="sidebar-menu-item active">🏠 Dashboard</div>
@@ -355,6 +403,7 @@ def check_authentication():
                 """,
                 unsafe_allow_html=True,
             )
+            st.markdown('</div>', unsafe_allow_html=True)
 
 
 check_authentication()
@@ -456,12 +505,12 @@ def load_metadata():
         csv_files = list(base_dir.glob("*.csv"))
         xlsx_files = list(base_dir.glob("*.xlsx"))
 
-    if csv_files:
-        file_path = csv_files[0]
-    elif xlsx_files:
-        file_path = xlsx_files[0]
-    else:
-        raise FileNotFoundError("Klasörde okunacak .csv veya .xlsx dosyası bulunamadı.")
+        if csv_files:
+            file_path = csv_files[0]
+        elif xlsx_files:
+            file_path = xlsx_files[0]
+        else:
+            raise FileNotFoundError("Klasörde okunacak .csv veya .xlsx dosyası bulunamadı.")
 
     if file_path.suffix.lower() == ".xlsx":
         df = pd.read_excel(file_path)
