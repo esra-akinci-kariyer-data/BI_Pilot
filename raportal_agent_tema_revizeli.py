@@ -305,9 +305,7 @@ def check_authentication():
             <div class="sidebar-menu-item active">🏠 Dashboard</div>
             <div class="sidebar-menu-item">🔍 Rapor Öner</div>
             <div class="sidebar-menu-item">📂 Metadata Listesi</div>
-            <div class="sidebar-menu-item">📊 Rapor Kullanım Analizi</div>
-            <div class="sidebar-menu-item">💡 Dashboard Önerisi</div>
-            <div class="sidebar-menu-item">⚖️ KPI Kıyaslama</div>
+            <div class="sidebar-menu-item">📈 Kullanım Analizi</div>
             <div class="sidebar-menu-item">ℹ️ Hakkında</div>
             """,
             unsafe_allow_html=True,
@@ -451,12 +449,12 @@ def load_metadata():
         csv_files = list(base_dir.glob("*.csv"))
         xlsx_files = list(base_dir.glob("*.xlsx"))
 
-    if csv_files:
-        file_path = csv_files[0]
-    elif xlsx_files:
-        file_path = xlsx_files[0]
-    else:
-        raise FileNotFoundError("Klasörde okunacak .csv veya .xlsx dosyası bulunamadı.")
+        if csv_files:
+            file_path = csv_files[0]
+        elif xlsx_files:
+            file_path = xlsx_files[0]
+        else:
+            raise FileNotFoundError("Klasörde okunacak .csv veya .xlsx dosyası bulunamadı.")
 
     if file_path.suffix.lower() == ".xlsx":
         df = pd.read_excel(file_path)
