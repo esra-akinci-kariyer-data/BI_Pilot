@@ -301,19 +301,10 @@ def check_authentication():
             <div class="sidebar-brand">
                 <span style="font-size: 1.6rem; margin-right: 10px;">📊</span> Raportal Agent
             </div>
-
-            <div class="sidebar-menu-item active">🏠 Dashboard</div>
-            <div class="sidebar-menu-item">🔍 Rapor Öner</div>
-            <div class="sidebar-menu-item">📂 Metadata Listesi</div>
-            <div class="sidebar-menu-item">📊 Rapor Kullanım Analizi</div>
-            <div class="sidebar-menu-item">💡 Dashboard Önerisi</div>
-            <div class="sidebar-menu-item">⚖️ KPI Kıyaslama</div>
-            <div class="sidebar-menu-item">ℹ️ Hakkında</div>
             """,
             unsafe_allow_html=True,
         )
 
-        st.markdown("<br><hr style='border-color: rgba(255,255,255,0.2)'><br>", unsafe_allow_html=True)
         st.markdown("#### Gemini Bağlantısı")
 
         if not st.session_state.api_key:
@@ -345,11 +336,25 @@ def check_authentication():
                 else:
                     st.error("❌ Lütfen API Key girin")
         else:
-            st.success("✅ API Key Doğrulandı")
+            st.success("✅ Bağlantı Aktif")
             if st.button("Çıkış Yap / Sıfırla", use_container_width=True):
                 st.session_state.api_key = None
                 st.session_state.available_models = []
                 st.rerun()
+
+            st.markdown("<br><hr style='border-color: rgba(255,255,255,0.2)'><br>", unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div class="sidebar-menu-item active">🏠 Dashboard</div>
+                <div class="sidebar-menu-item">🔍 Rapor Öner</div>
+                <div class="sidebar-menu-item">📂 Metadata Listesi</div>
+                <div class="sidebar-menu-item">📊 Rapor Kullanım Analizi</div>
+                <div class="sidebar-menu-item">💡 Dashboard Önerisi</div>
+                <div class="sidebar-menu-item">⚖️ KPI Kıyaslama</div>
+                <div class="sidebar-menu-item">ℹ️ Hakkında</div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 check_authentication()
