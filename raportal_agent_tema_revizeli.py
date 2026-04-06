@@ -465,6 +465,13 @@ def load_metadata():
             df = pd.read_csv(file_path, sep=";", encoding="cp1254")
 
     df = clean_columns(df)
+    
+    # "Silinen Raporlar" klasörünü ve içeriğini filtrele
+    if "Klasör1" in df.columns:
+        df = df[~df["Klasör1"].str.contains("Silinen Raporlar", na=False)]
+    if "Path" in df.columns:
+        df = df[~df["Path"].str.contains("Silinen Raporlar", na=False)]
+        
     return df, file_path.name
 
 

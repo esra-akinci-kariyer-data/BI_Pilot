@@ -89,6 +89,18 @@ def load_metadata():
     base = Path(__file__).resolve().parent
     df_p = pd.read_csv(base/"pilot_rapor_metadata_clean.csv", sep=";", encoding="utf-8-sig")
     df_m = pd.read_csv(base/"raportal_metadata_master.xlsx.csv", sep=";", encoding="utf-8-sig")
+    
+    # "Silinen Raporlar" klasörünü ve içeriğini filtrele
+    if "Klasör1" in df_p.columns:
+        df_p = df_p[~df_p["Klasör1"].str.contains("Silinen Raporlar", na=False)]
+    if "Path" in df_p.columns:
+        df_p = df_p[~df_p["Path"].str.contains("Silinen Raporlar", na=False)]
+
+    if "Klasör1" in df_m.columns:
+        df_m = df_m[~df_m["Klasör1"].str.contains("Silinen Raporlar", na=False)]
+    if "Path" in df_m.columns:
+        df_m = df_m[~df_m["Path"].str.contains("Silinen Raporlar", na=False)]
+
     return df_p, df_m
 
 @st.cache_data
