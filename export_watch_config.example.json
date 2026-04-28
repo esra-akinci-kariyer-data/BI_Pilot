@@ -1,0 +1,11 @@
+{
+  "export_dirs": [
+    "C:/Users/esra.akinci/Downloads",
+    "C:/Users/esra.akinci/OneDrive - Kariyer.net/Masaustu/AI/raportal_agent_poc/exports"
+  ],
+  "recursive": true,
+  "analyze_existing_on_start": true,
+  "supported_extensions": [".csv", ".xlsx", ".xls"],
+  "output_dir": "C:/Users/esra.akinci/OneDrive - Kariyer.net/Masaustu/AI/raportal_agent_poc/export_analysis",
+  "debounce_seconds": 2
+}

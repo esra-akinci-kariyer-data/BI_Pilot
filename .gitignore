@@ -1,0 +1,9 @@
+.pw-raportal-profile/
+__pycache__/
+*.pyc
+temp_pbix/
+temp_analysis/
+dashboard_screenshots/
+session_outputs/
+.devcontainer/
+scratch/

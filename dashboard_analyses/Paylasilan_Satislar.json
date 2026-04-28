@@ -1,0 +1,19 @@
+{
+  "url": "https://raportal.kariyer.net/home/report/Sat%C4%B1%C5%9F/Paylasilan%20Satislar",
+  "report_name": "Paylasilan Satislar",
+  "pages": [
+    {
+      "tab_name": "Ana Sayfa",
+      "title": "Paylasilan Satislar - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/report/Sat%C4%B1%C5%9F/Paylasilan%20Satislar",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_00_Ana_Sayfa.png",
+      "visible_text": "Skip to content | ... | Home | Satış | Paylasilan Satislar | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | Loading finished",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    }
+  ],
+  "error": null
+}

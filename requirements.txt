@@ -13,6 +13,7 @@ pydeck
 python-dateutil
 pytz
 requests
+requests-ntlm
 tenacity
 tornado
 watchdog

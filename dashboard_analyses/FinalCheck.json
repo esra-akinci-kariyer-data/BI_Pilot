@@ -1,0 +1,43 @@
+{
+  "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/FinalCheck",
+  "report_name": "FinalCheck",
+  "pages": [
+    {
+      "tab_name": "Firmalar",
+      "title": "FinalCheck - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/FinalCheck",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_00_Firmalar.png",
+      "visible_text": "Skip to content | ... | Home | Satış | FinalCheck | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Teklif",
+      "title": "FinalCheck - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/FinalCheck",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_01_Teklif.png",
+      "visible_text": "Skip to content | ... | Home | Satış | FinalCheck | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Teklif Detay",
+      "title": "FinalCheck - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/FinalCheck",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_02_Teklif_Detay.png",
+      "visible_text": "Skip to content | ... | Home | Satış | FinalCheck | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    }
+  ],
+  "error": null
+}

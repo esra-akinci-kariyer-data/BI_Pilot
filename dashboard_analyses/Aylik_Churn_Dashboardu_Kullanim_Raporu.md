@@ -1,0 +1,1 @@
+**Model Bulunamadı (404):** 'gemini-1.5-flash' bu anahtar için geçerli değil. Lütfen soldan 'Erişilebilir Modelleri Tara' butonuna basın.

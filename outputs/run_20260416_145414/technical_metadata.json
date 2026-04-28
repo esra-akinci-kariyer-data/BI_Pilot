@@ -1,0 +1,28 @@
+{
+  "run_id": "20260416_145414",
+  "reports": [
+    {
+      "report_name": "Aylık Churn",
+      "report_url": "http://biportal.kariyer.net/reports/powerbi/Satış/Portföy Performans/Aylık Churn",
+      "technical_analysis": {
+        "pbix_found": true,
+        "status": "Stub Detected",
+        "failure_reasons": [
+          "XMLA Failed: Zaman aşımı: Veri bulunamadı.",
+          "Tespit: Bu bir Canlı Bağlantı (Live Connection) raporudur. Formüller sunucudadır."
+        ],
+        "type": "Power BI Project",
+        "pages": [],
+        "tables": [],
+        "measures": [],
+        "relationships": [],
+        "m_queries": {},
+        "source_quality": "Low"
+      },
+      "business_analysis": {
+        "status": "Pending"
+      },
+      "steps": []
+    }
+  ]
+}

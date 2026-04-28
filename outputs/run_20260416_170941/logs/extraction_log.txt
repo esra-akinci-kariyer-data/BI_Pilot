@@ -1,0 +1,2 @@
+2026-04-16 17:09:44,432 [INFO] --- Starting Analysis: Aylık Churn ---
+2026-04-16 17:09:44,456 [INFO] Forensic results: 0 measures found.

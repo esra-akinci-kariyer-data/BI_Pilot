@@ -1,0 +1,20 @@
+{
+  "run_id": "20260416_150252",
+  "overall_status": "Starting",
+  "phases": {
+    "technical": {
+      "status": "starting",
+      "failure_reasons": [
+        "OLASI THIN REPORT: Yerel veri modeli (DataModel) pakette bulunamadı.",
+        "XMLA Error: Zaman aşımı: Veri bulunamadı."
+      ],
+      "measures": [],
+      "m_queries": {},
+      "type": "Power BI Project",
+      "pages": [],
+      "tables": [],
+      "relationships": [],
+      "source_quality": "Low"
+    }
+  }
+}

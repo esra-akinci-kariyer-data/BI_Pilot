@@ -1,0 +1,79 @@
+[
+  {
+    "timestamp": "2026-04-21 18:23:27",
+    "prompt": "Aylık churn oranını veren musteri yenileme tipi ikço bölüm bazlı dashboard analiziz istiyorum",
+    "summary": "Tasarım oluşturulurken bir hata oluştu: 403 The provided API key has an IP address restriction. The originating IP address of the call (31.223.59.200) violates this restriction. [reason: \"API_KEY_IP_ADDRESS_BLOCKED\"\ndomain: \"googleapis.com\"\nmetadata {\n  key: \"service\"\n  value: \"generativelanguage.googleapis.com\"\n}\nmetadata {\n  key: \"consumer\"\n  value: \"projects/836055084292\"\n}\nmetadata {\n  key: \"callerIp\"\n  value: \"31.223.59.200\"\n}\n, locale: \"en-US\"\nmessage: \"The provided API key has an IP addre..."
+  },
+  {
+    "timestamp": "2026-04-21 18:31:59",
+    "prompt": "Aylık churn oranlarını ay bazlı müşterilerin sözleşme bitişine göre görmek istiyorum, yenileme tipi bazlı, ikço müşteri kodu ve müşteri unvan gibi bilgilerde olsun \n",
+    "summary": "Tasarım oluşturulurken bir hata oluştu: 403 The provided API key has an IP address restriction. The originating IP address of the call (31.223.59.200) violates this restriction. [reason: \"API_KEY_IP_ADDRESS_BLOCKED\"\ndomain: \"googleapis.com\"\nmetadata {\n  key: \"service\"\n  value: \"generativelanguage.googleapis.com\"\n}\nmetadata {\n  key: \"consumer\"\n  value: \"projects/836055084292\"\n}\nmetadata {\n  key: \"callerIp\"\n  value: \"31.223.59.200\"\n}\n, locale: \"en-US\"\nmessage: \"The provided API key has an IP addre..."
+  },
+  {
+    "timestamp": "2026-04-21 18:47:50",
+    "prompt": "Aylık olarak gelir,adet,sözleşme başına gelir ssrs raporu istiyorum. dönem bazlı örnek olarak 202604 vb gibi gitsin",
+    "summary": "Tasarım oluşturulurken model hatası oluştu (404): 404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.. Alternatif denemesi de başarısız: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+  },
+  {
+    "timestamp": "2026-04-21 18:48:08",
+    "prompt": "Aylık olarak gelir,adet,sözleşme başına gelir ssrs raporu istiyorum. dönem bazlı örnek olarak 202604 vb gibi gitsin",
+    "summary": "Tasarım oluşturulurken model hatası oluştu (404): 404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.. Alternatif denemesi de başarısız: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+  },
+  {
+    "timestamp": "2026-04-21 18:49:31",
+    "prompt": "Aylık olarak gelir,adet,sözleşme başına gelir ssrs raporu istiyorum. dönem bazlı örnek olarak 202604 vb gibi gitsin",
+    "summary": "Harika bir talep! Kariyer.net'in satış ve performans metriklerini takip etmek için bu tür raporlar oldukça kritik. SSRS (Matbu/Liste) gereksinimi doğrultusunda, net, anlaşılır ve aksiyon alınabilir bir tabular rapor tasarımı öneriyorum.\n\n---\n\n### 1. İhtiyaç Özeti\n*   **Amaç:** İKÇO'ların ve Bölümlerin aylık bazda gelir, sözleşme adedi ve sözleşme başına ortalama gelir performansını takip etmek, verimlilik analizi yapmak.\n*   **Hedef Kullanıcı:** Bölüm Yöneticileri, İKÇO Yöneticileri, Satış Direk..."
+  },
+  {
+    "timestamp": "2026-04-21 18:53:02",
+    "prompt": "Talep: Aylık olarak gelir,adet,sözleşme başına gelir ssrs raporu istiyorum. dönem bazlı örnek olarak 202604 vb gibi gitsin",
+    "summary": "Tasarım oluşturulurken bir hata oluştu: 403 The provided API key has an IP address restriction. The originating IP address of the call (31.223.59.200) violates this restriction. [reason: \"API_KEY_IP_ADDRESS_BLOCKED\"\ndomain: \"googleapis.com\"\nmetadata {\n  key: \"service\"\n  value: \"generativelanguage.googleapis.com\"\n}\nmetadata {\n  key: \"consumer\"\n  value: \"projects/836055084292\"\n}\nmetadata {\n  key: \"callerIp\"\n  value: \"31.223.59.200\"\n}\n, locale: \"en-US\"\nmessage: \"The provided API key has an IP addre..."
+  },
+  {
+    "timestamp": "2026-04-22 13:27:10",
+    "prompt": "Aylık olarak gelir,adet,sözleşme başına gelir ssrs raporu istiyorum. dönem bazlı örnek olarak 202604 vb gibi gitsin",
+    "summary": "Harika bir meydan okuma! Power BI Dashboard Tasarım Ajanınız olarak, Kariyer.net'in premium raporlama standartlarını ve gerçek dünya verilerini kullanarak kullanıcı ihtiyacını en iyi şekilde karşılayacak bir dashboard tasarımı hazırlıyorum.\n\n---\n\n### 1. İhtiyaç Özeti\n\n*   **Amaç:** Kullanıcının belirttiği aylık bazda toplam gelir, satış adedi ve sözleşme başına gelir metriklerini dönemsel olarak takip etmek, anahtar performans göstergelerini görselleştirmek ve detaylı kırılımlar sunarak satış pe..."
+  },
+  {
+    "timestamp": "2026-04-22 14:04:53",
+    "prompt": "Aylık churn rapounu müşteri sözleşme bitiş tarihine göre ve yenileme tipleri ikço bölüm bilgileri ile churn oranları için dashboard istiyorum ",
+    "summary": "Tasarım oluşturulurken bir hata oluştu: 403 The provided API key has an IP address restriction. The originating IP address of the call (31.223.59.200) violates this restriction. [reason: \"API_KEY_IP_ADDRESS_BLOCKED\"\ndomain: \"googleapis.com\"\nmetadata {\n  key: \"service\"\n  value: \"generativelanguage.googleapis.com\"\n}\nmetadata {\n  key: \"consumer\"\n  value: \"projects/836055084292\"\n}\nmetadata {\n  key: \"callerIp\"\n  value: \"31.223.59.200\"\n}\n, locale: \"en-US\"\nmessage: \"The provided API key has an IP addre..."
+  },
+  {
+    "timestamp": "2026-04-22 15:53:39",
+    "prompt": "Talep: Aylık churn oranlarını ay bazlı müşterilerin sözleşme bitişine göre görmek istiyorum, yenileme tipi bazlı, ikço müşteri kodu ve müşteri unvan gibi bilgilerde olsun",
+    "summary": "Tasarım oluşturulurken bir hata oluştu: 403 The provided API key has an IP address restriction. The originating IP address of the call (31.223.59.200) violates this restriction. [reason: \"API_KEY_IP_ADDRESS_BLOCKED\"\ndomain: \"googleapis.com\"\nmetadata {\n  key: \"service\"\n  value: \"generativelanguage.googleapis.com\"\n}\nmetadata {\n  key: \"consumer\"\n  value: \"projects/836055084292\"\n}\nmetadata {\n  key: \"callerIp\"\n  value: \"31.223.59.200\"\n}\n, locale: \"en-US\"\nmessage: \"The provided API key has an IP addre..."
+  },
+  {
+    "timestamp": "2026-04-27 09:57:51",
+    "prompt": "Aylık churn oranını göstericek yenileme tipi ve ikço bilgilerini verecek dashboard istiyorum",
+    "summary": "Harika bir iş talebi! Kariyer.net'in premium standartlarına uygun, gerçek dünya verilerini kullanarak bir Power BI dashboard tasarımı hazırlıyorum.\n\n---\n\n### KARIYER.NET AYLIK CHURN PERFORMANS VE DETAY ANALİZİ PANELİ\n\n**1. İhtiyaç Özeti**\n*   **Amaç:** Kariyer.net'in aylık müşteri churn (kayıp) oranını ve bu orana etki eden temel faktörleri (yenileme tipi, İKÇO performansı) detaylı bir şekilde analiz etmek, böylece churn'u azaltmaya yönelik stratejiler geliştirmek.\n*   **Hedef Kullanıcı:** Satış..."
+  },
+  {
+    "timestamp": "2026-04-27 10:05:01",
+    "prompt": "Aylık churn oranını göstericek yenileme tipi ve ikço bilgilerini verecek dashboard istiyorum",
+    "summary": "Harika bir talep! Kariyer.net'in premium raporlama standartlarını temel alarak, \"Aylık Churn Oranı\" dashboard tasarımı önerinizi hazırlıyorum.\n\n---\n\n### 1. İhtiyaç Özeti\n\n*   **Amaç:** Kariyer.net'in müşteri churn (kayıp) oranlarını aylık bazda etkin bir şekilde izlemek, bu oranları sorumlu İKÇO'lar ve yenileme tipleri özelinde detaylandırarak churn'a etki eden temel faktörleri belirlemek ve proaktif stratejiler geliştirmek.\n*   **Hedef Kullanıcı:** Satış Yöneticileri, Bölüm Yöneticileri, İKÇO'l..."
+  },
+  {
+    "timestamp": "2026-04-27 11:26:39",
+    "prompt": "Aylık churn oranını göstericek yenileme tipi ve ikço bilgilerini verecek dashboard istiyorum",
+    "summary": "Tasarım oluşturulurken model hatası oluştu (404): 404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.. Alternatif denemesi de başarısız: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+  },
+  {
+    "timestamp": "2026-04-27 11:27:47",
+    "prompt": "Aylık churn oranını göstericek yenileme tipi ve ikço bilgilerini verecek dashboard istiyorum",
+    "summary": "⚠️ **Gemini API Anahtarınızda IP Kısıtlaması Bulunuyor!**\n\nBu hata, Google'ın güvenlik ayarları gereği mevcut internet bağlantınızdan (IP adresinizden) gelen isteği reddettiği anlamına gelir.\n\n**Kesin Çözüm İşlemleri:**\n1. [Google AI Studio](https://aistudio.google.com/app/apikey) adresine gidin.\n2. Kullandığınız API anahtarının yanındaki **'Edit'** veya ayarlar simgesine tıklayın.\n3. **'IP Restrictions'** (IP Kısıtlamaları) bölümünü bulun.\n4. Bu kısmı **'None'** (Yok) olarak değiştirin veya mev..."
+  },
+  {
+    "timestamp": "2026-04-27 11:49:08",
+    "prompt": " Aylık churn oranını göstericek yenileme tipi ve ikço bilgilerini verecek dashboard istiyorum",
+    "summary": "Tasarım oluşturulurken model hatası oluştu (404): 404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.. Alternatif denemesi de başarısız: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods."
+  },
+  {
+    "timestamp": "2026-04-27 14:36:00",
+    "id": "manual_v6",
+    "prompt": "Kariyer.net Veri Uyumlu Aylık Churn Dashboardu (v6)",
+    "summary": "Large/Medium/Small segmentleri yerine gerçek Kariyer Plus/Classic/Professional hiyerarşisi uygulandı.",
+    "image_path": "assets/visionary_mockups/history/mockup_v6_final.png"
+  }
+]

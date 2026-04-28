@@ -1,0 +1,43 @@
+{
+  "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/Portf%C3%B6y%20Performans/Ayl%C4%B1k%20Churn",
+  "report_name": "Aylık Churn",
+  "pages": [
+    {
+      "tab_name": "Yenileme Tipi",
+      "title": "Aylık Churn - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/Portf%C3%B6y%20Performans/Ayl%C4%B1k%20Churn",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_00_Yenileme_Tipi_1776861088.png",
+      "visible_text": "Skip to content | ... | Home | Satış | Portföy Performans | Aylık Churn | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Kırılımlar",
+      "title": "Aylık Churn - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/Portf%C3%B6y%20Performans/Ayl%C4%B1k%20Churn",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_01_Kırılımlar_1776861088.png",
+      "visible_text": "Skip to content | ... | Home | Satış | Portföy Performans | Aylık Churn | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Grafs",
+      "title": "Aylık Churn - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/Portf%C3%B6y%20Performans/Ayl%C4%B1k%20Churn",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_02_Grafs_1776861088.png",
+      "visible_text": "Skip to content | ... | Home | Satış | Portföy Performans | Aylık Churn | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    }
+  ],
+  "error": null
+}

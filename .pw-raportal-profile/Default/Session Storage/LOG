@@ -1,0 +1,20 @@
+2026/04/22-15:30:35.834 6b6c Reusing MANIFEST C:\Users\esra.akinci\OneDrive - Kariyer.net\Masaüstü\AI\raportal_agent_poc\.pw-raportal-profile\Default\Session Storage/MANIFEST-000001
+2026/04/22-15:30:35.836 6b6c Recovering log #62
+2026/04/22-15:30:35.837 6b6c Level-0 table #65: started
+2026/04/22-15:30:35.847 6b6c Level-0 table #65: 69031 bytes OK
+2026/04/22-15:30:35.848 6b6c Recovering log #65
+2026/04/22-15:30:35.851 6b6c Reusing old log C:\Users\esra.akinci\OneDrive - Kariyer.net\Masaüstü\AI\raportal_agent_poc\.pw-raportal-profile\Default\Session Storage/000065.log 
+2026/04/22-15:30:35.856 6b6c Delete type=0 #62
+2026/04/22-15:30:35.857 6b6c Delete type=2 #66
+2026/04/22-15:30:35.860 6e30 Compacting 4@0 + 1@1 files
+2026/04/22-15:30:35.872 6e30 Generated table #66@0: 459 keys, 74380 bytes
+2026/04/22-15:30:35.873 6e30 Compacted 4@0 + 1@1 files => 74380 bytes
+2026/04/22-15:30:35.874 6e30 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/04/22-15:30:35.875 6e30 Delete type=2 #55
+2026/04/22-15:30:35.875 6e30 Delete type=2 #57
+2026/04/22-15:30:35.875 6e30 Delete type=2 #60
+2026/04/22-15:30:35.875 6e30 Delete type=2 #63
+2026/04/22-15:30:35.875 6e30 Delete type=2 #65
+2026/04/22-15:30:47.106 6e30 Level-0 table #68: started
+2026/04/22-15:30:47.129 6e30 Level-0 table #68: 34139 bytes OK
+2026/04/22-15:30:47.133 6e30 Delete type=0 #65

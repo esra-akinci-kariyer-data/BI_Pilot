@@ -1,0 +1,15 @@
+2026/04/22-15:30:37.992 3758 Reusing MANIFEST C:\Users\esra.akinci\OneDrive - Kariyer.net\Masaüstü\AI\raportal_agent_poc\.pw-raportal-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/04/22-15:30:37.996 3758 Recovering log #72
+2026/04/22-15:30:37.997 3758 Reusing old log C:\Users\esra.akinci\OneDrive - Kariyer.net\Masaüstü\AI\raportal_agent_poc\.pw-raportal-profile\Default\EdgeCoupons/coupons_data.db/000072.log 
+2026/04/22-15:30:38.104 3328 Level-0 table #76: started
+2026/04/22-15:30:38.111 3328 Level-0 table #76: 682224 bytes OK
+2026/04/22-15:30:38.113 3328 Delete type=0 #72
+2026/04/22-15:30:38.114 3328 Compacting 4@0 + 1@1 files
+2026/04/22-15:30:38.121 3328 Generated table #77@0: 4 keys, 682247 bytes
+2026/04/22-15:30:38.122 3328 Compacted 4@0 + 1@1 files => 682247 bytes
+2026/04/22-15:30:38.123 3328 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/04/22-15:30:38.124 3328 Delete type=2 #64
+2026/04/22-15:30:38.124 3328 Delete type=2 #67
+2026/04/22-15:30:38.124 3328 Delete type=2 #70
+2026/04/22-15:30:38.124 3328 Delete type=2 #73
+2026/04/22-15:30:38.124 3328 Delete type=2 #76

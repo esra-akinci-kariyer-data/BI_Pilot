@@ -1,0 +1,29 @@
+{
+  "run_id": "20260416_153211",
+  "overall_status": "Starting",
+  "phases": {
+    "technical": {
+      "status": "starting",
+      "failure_reasons": [
+        "KANIT: 'Connections' dosyası var ama 'DataModel' yok. Bu teknik olarak bir Thin Report / Live Connection raporudur.",
+        "XMLA Error: Zaman aşımı: Veri bulunamadı."
+      ],
+      "measures": [],
+      "m_queries": {},
+      "tables": [],
+      "package_items": [
+        "Version",
+        "[Content_Types].xml",
+        "DiagramLayout",
+        "Report/Layout",
+        "Settings",
+        "Metadata",
+        "Connections",
+        "Report/StaticResources/SharedResources/BaseThemes/CY23SU04.json",
+        "Report/StaticResources/RegisteredResources/morInfo5804789071435581.png",
+        "SecurityBindings"
+      ],
+      "filename": "FinalCheck.pbix"
+    }
+  }
+}
