@@ -22,6 +22,10 @@ if VENV_LIB.exists() and str(VENV_LIB) not in sys.path:
 
 import time
 import threading
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 from urllib.parse import quote
 import requests
 from requests_ntlm import HttpNtlmAuth
@@ -2211,6 +2215,7 @@ def render_fix_sorgular():
                 # Excel Download
                 try:
                     excel_data = to_excel(df_live)
+                    st.session_state['last_excel_data'] = excel_data
                     st.download_button(
                         label="📥 Sonucu Excel Olarak İndir (Segoe Font & Mor Başlık)",
                         data=excel_data,
@@ -2221,13 +2226,94 @@ def render_fix_sorgular():
                 except Exception as ex:
                     st.warning(f"Excel oluşturulamadı: {ex}")
                     csv = df_live.to_csv(index=False).encode('utf-8-sig')
+                    st.session_state['last_excel_data'] = csv
                     st.download_button("📥 CSV İndir", data=csv, file_name=f"FinalCheck_{donem_in}.csv", mime="text/csv")
+                
+                # Save to session to enable mailing
+                st.session_state['last_df_live'] = df_live
+                st.session_state['last_donem'] = donem_in
+                st.session_state['last_tpl_key'] = selected_tpl_key
                 
                 st.markdown('</div>', unsafe_allow_html=True)
 
             except Exception as e:
                 st.error(f"⚠️ biportal Hatası: {str(e)}")
                 st.info("İpucu: ODBC Driver yanısıra VPN bağlantınızın açık olduğundan emin olun.")
+
+    # --- EMAIL SECTION ---
+    if 'last_df_live' in st.session_state and "finalcheck" in st.session_state.get('last_tpl_key', '').lower():
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("✉️ Sonuçları E-Posta Gönder", expanded=False):
+            st.markdown("Sonuç tablosunu **@kariyer.net** adreslerine anında iletin.")
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                e_to = st.text_input("Alıcı E-Posta", placeholder="ahmet@kariyer.net")
+            with m_col2:
+                e_subject = st.text_input("Konu", value=f"FinalCheck Sonuçları - {st.session_state.get('last_donem')}")
+                
+            m_col3, m_col4 = st.columns(2)
+            with m_col3:
+                e_sender = st.text_input("Sizin E-Postanız", placeholder="esra.akinci@kariyer.net")
+            with m_col4:
+                e_pass = st.text_input("Kurumsal Parolanız", type="password", help="Şifreniz sistemde kaydedilmez, sadece anlık gönderim için kullanılır.")
+                
+            e_body = st.text_area("Mesaj Notu (Opsiyonel)", value="Merhaba,\n\nİlgili döneme ait FinalCheck sorgu sonuçları ekteki dosyada ve aşağıdaki tabloda sunulmuştur.\n\nİyi çalışmalar.")
+            
+            if st.button("📤 E-Postayı Gönder", type="primary", use_container_width=True):
+                if not e_to or not e_sender or not e_pass:
+                    st.error("Lütfen alıcı, gönderen ve parola alanlarını doldurun.")
+                elif not e_to.endswith("@kariyer.net") and not e_sender.endswith("@kariyer.net"):
+                    st.warning("Bu altyapı genellikle sadece @kariyer.net adresleri (Office 365) için yetkilendirilmiştir.")
+                else:
+                    with st.spinner("📧 Mail gönderiliyor... (Office 365 bağlantısı kuruluyor)"):
+                        try:
+                            # Table HTML
+                            df_snap = st.session_state['last_df_live'].head(50)
+                            html_table = df_snap.to_html(index=False, classes="dataframe", border=1)
+                            styled_html = f"""
+                            <html>
+                            <head>
+                            <style>
+                                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
+                                .dataframe {{ border-collapse: collapse; width: 100%; font-size: 12px; }}
+                                .dataframe th {{ background-color: #8c28e8; color: white; padding: 8px; text-align: left; }}
+                                .dataframe td {{ border: 1px solid #ddd; padding: 8px; }}
+                                .dataframe tr:nth-child(even) {{ background-color: #f2f2f2; }}
+                            </style>
+                            </head>
+                            <body>
+                                <p>{e_body.replace(chr(10), '<br>')}</p>
+                                <h3>Özet Tablo (İlk 50 Satır)</h3>
+                                {html_table}
+                            </body>
+                            </html>
+                            """
+                            
+                            # Attachment
+                            excel_bytes = st.session_state.get('last_excel_data')
+                            file_ext = "csv" if isinstance(excel_bytes, bytes) and b"," in excel_bytes[:20] else "xlsx" # crude check
+                            
+                            msg = MIMEMultipart()
+                            msg['From'] = e_sender
+                            msg['To'] = e_to
+                            msg['Subject'] = e_subject
+                            msg.attach(MIMEText(styled_html, 'html', 'utf-8'))
+                            
+                            if excel_bytes:
+                                part = MIMEApplication(excel_bytes, Name=f"Sonuclar.{file_ext}")
+                                part['Content-Disposition'] = f'attachment; filename="FinalCheck_{st.session_state.get("last_donem")}.{file_ext}"'
+                                msg.attach(part)
+                                
+                            server = smtplib.SMTP("smtp.office365.com", 587)
+                            server.starttls()
+                            server.login(e_sender, e_pass)
+                            server.send_message(msg)
+                            server.quit()
+                            
+                            st.success(f"✅ E-posta {e_to} adresine başarıyla gönderildi!")
+                        except Exception as em_err:
+                            st.error(f"E-Posta Gönderilemedi: {em_err}")
+                            st.info("Eğer Office 365 kullanıyorsanız ve MFA (Çift Aşamalı Doğrulama) açıksa 'Uygulama Parolası' gerekebilir.")
 
     # --- MANUAL UPLOAD SECTION ---
     st.markdown("<br><br>", unsafe_allow_html=True)
