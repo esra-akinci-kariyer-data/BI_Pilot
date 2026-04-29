@@ -12,6 +12,8 @@ import pyodbc
 import json
 import os
 import sys
+from datetime import datetime, timedelta
+
 from pathlib import Path
 
 # Fix: Ensure the virtual environment's libraries are always preferred
@@ -42,6 +44,37 @@ try:
 except Exception as e:
     VISION_ENABLED = False
     VISION_ERROR = str(e)
+
+def save_schedule(template_name, recipient):
+    """Schedules a report for monthly automated delivery."""
+    config_dir = Path(__file__).resolve().parent / "config"
+    config_dir.mkdir(exist_ok=True)
+    path = config_dir / "schedules.json"
+    
+    schedules = []
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                schedules = json.load(f)
+        except: schedules = []
+            
+    # Check if exists
+    for s in schedules:
+        if s.get("template_name") == template_name and s.get("recipient") == recipient:
+            return False, "Bu zamanlama zaten mevcut."
+            
+    schedules.append({
+        "template_name": template_name,
+        "recipient": recipient,
+        "active": True,
+        "last_run": "Henüz çalışmadı",
+        "status": "Bekliyor",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(schedules, f, indent=4)
+    return True, "Zamanlama başarıyla kaydedildi."
 
 # Create temp folder for Robot interaction
 if not os.path.exists("temp_pbix"):
