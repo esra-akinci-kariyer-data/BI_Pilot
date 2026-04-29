@@ -279,31 +279,27 @@ def suggest_report_template(
         yenileme_tipleri = ", ".join(real_entities.get("yenileme_tipleri", []))
         musteri_listesi = ", ".join([f"{m['unvan']} ({m['kod']})" for m in real_entities.get("musteriler", [])])
         entity_block = f"""
-    ### GERÇEK DÜNYA VERİLERİ (DİKKAT: BUNLARI KULLAN!)
-    Aşağıdaki isimler Kariyer.net'in gerçek organizasyon yapısından alınmıştır. 
-    Tasarımında örnek veri yerine MUTLAKA bu gerçek isimleri kullanarak 'Real-World' bir hava ver:
-    - gerçek Bölümler: {bolumler}
-    - gerçek İKÇO İsimleri: {ikcolar}
-    - gerçek Yenileme Tipleri: {yenileme_tipleri}
-    - gerçek Müşteri Listesi (Ünvan ve Kod): {musteri_listesi}
+    ### GERÇEK DÜNYA VERİLERİ VE KAYNAKLAR (KRİTİK!)
+    Aşağıdaki isimler Kariyer.net'in gerçek organizasyon yapısından ve BIDB veritabanından alınmıştır.
+    Tasarımında örnek veri yerine MUTLAKA bu gerçek bilgileri kullan:
+    
+    1. **BIDB Ground Truth:** Satış, ürün tanımı, paket bilgileri ve yenileme tipleri için **[18_satislar]** tablosundaki mantığı temel al.
+    2. **Kurumsal Yerleşim:** Kariyer.net kurumsal kimliği gereği, her dashboard sayfasının **SOL ÜST** köşesinde mutlaka Kariyer.net logosu bulunmalıdır.
+    3. **Organizasyon:**
+       - Gerçek Bölümler: {bolumler}
+       - Gerçek İKÇO İsimleri: {ikcolar}
+       - Gerçek Yenileme Tipleri: {yenileme_tipleri}
+       - Gerçek Müşteri Listesi: {musteri_listesi}
     --------------------------------------------------
     """
     # --- SYSTEM INSTRUCTIONS ---
     prompt_parts.append(f"""
     SENARYO: AGENT SYSTEM PROMPT
-
-    Sen bir Power BI Dashboard Tasarım Ajanısın (Raportal Vizyoneri).
-    Görevin, kullanıcının serbest metin olarak yazdığı rapor ihtiyacını analiz etmek ve ona en uygun dashboard tasarım önerisini üretmektir.
-    Çalışmalarında Kariyer.net'in premium raporlama standartlarını (Kariyer Moru #8c28e8 ve Grisi #f7f9fc ağırlıklı görsel dil) temel almalısın.
-
+ 
+    Sen bir Kariyer.net BI Solutions Architect ve Tasarım Ajanısın (Raportal Vizyoneri).
+    Görevin, kullanıcının talebini analiz ederek Kariyer.net standartlarında (Kariyer Moru #8c28e8 ağırlıklı) profesyonel bir dashboard tasarımı üretmektir.
+ 
     {entity_block}
-
-    ### KRİTİK KURAL: İÇERİK DOĞRULUĞU
-    Kullanıcının talebi hangi iş alanı ile ilgiliyse (Satış, Portföy Takibi, Churn, Finans vb.) SADECE o alana odaklan. 
-    Kariyer.net bir iş portalı olsa da, her rapor 'İşe Alım' veya 'Aday' odaklı DEĞİLDİR. 
-    
-    **Terminoloji Notu:** Kariyer.net'te 'Satış Temsilcisi' veya 'Portföy Yöneticisi' yerine **"İKÇO"** terimi kullanılır. Tasarımlarında ve metinlerinde 'Satış Temsilcisi' yerine 'İKÇO' ifadesini kullanmalısın.
-    
     Eğer talep Satış/Portföy üzerineyse, İşe Alım terminolojisini (Aday, İlan, Başvuru vb.) KESİNLİKLE kullanma! Talebin özündeki iş sorusuna sadık kal.
 
     Amacın, kullanıcının talebinden iş ihtiyacını doğru anlamak, uygun analiz yaklaşımını seçmek, mümkünse veri/metadata ile eşleştirmek ve sonuçta Power BI standartlarına uygun, sade, aksiyon alınabilir ve mantıklı bir dashboard tasarımı önermektir.
@@ -383,6 +379,16 @@ def suggest_report_template(
             except Exception as e2:
                 return f"Tasarım oluşturulurken model hatası oluştu (404): {error_str}. Alternatif denemesi de başarısız: {str(e2)}"
         
+        # 400 durumunda Interactions API hatası kontrolü
+        if "400" in error_str and "Interactions API" in error_str:
+            return (
+                "⚠️ **Model Uyumsuzluğu (Interactions API Only).**\n\n"
+                "Seçtiğiniz model (`{}`) bu tasarım işlemi için uygun değil. "
+                "Bu tip modeller (Örn: deep-research) sadece özel sohbet arayüzleri için tasarlanmıştır.\n\n"
+                "**Çözüm:** Lütfen soldaki panelden **'gemini-1.5-flash'** veya **'gemini-2.0-flash'** gibi standart bir model seçerek tekrar deneyin."
+                .format(clean_model_name)
+            )
+
         return f"Tasarım oluşturulurken bir hata oluştu: {error_str}"
         
         return f"Tasarım oluşturulurken bir hata oluştu: {error_str}"

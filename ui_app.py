@@ -55,8 +55,8 @@ except ImportError:
     genai = None
 
 # --- DATABASE HELPERS ---
-def get_bidb_connection(server="biportal", database="Raportal"):
-    """biportal sunucusuna Windows Authentication ile (SSMS Ayarlarıyla) bağlanır."""
+def get_bidb_connection(server="bidb", database="Raportal"):
+    """bidb sunucusuna Windows Authentication ile (SSMS Ayarlarıyla) bağlanır."""
     drivers = [
         '{ODBC Driver 18 for SQL Server}',
         '{ODBC Driver 17 for SQL Server}',
@@ -71,18 +71,18 @@ def get_bidb_connection(server="biportal", database="Raportal"):
     for driver in drivers:
         try:
             conn_str = f"Driver={driver};{base_params}"
-            return pyodbc.connect(conn_str, timeout=1)
+            return pyodbc.connect(conn_str, timeout=10)
         except Exception:
             # Fallback: Encrypt kapatmayı dene (bazı sürücüler için)
             try:
                 conn_str_alt = f"Driver={driver};Server={server};Database={database};Trusted_Connection=yes;Encrypt=no;"
-                return pyodbc.connect(conn_str_alt, timeout=1)
+                return pyodbc.connect(conn_str_alt, timeout=10)
             except:
                 continue
     return None
 
-def run_query_on_bidb(sql, server="biportal", database="Raportal"):
-    """Verilen SQL sorgusunu biportal üzerinde çalıştırır."""
+def run_query_on_bidb(sql, server="bidb", database="Raportal"):
+    """Verilen SQL sorgusunu bidb üzerinde çalıştırır."""
     conn = get_bidb_connection(server=server, database=database)
     if not conn:
         raise ConnectionError(f"[{server}] sunucusuna bağlanılamadı. Lütfen VPN kontrolü yapın.")
@@ -2176,14 +2176,14 @@ def render_fix_sorgular():
     with col_btn:
         st.write("") # Alignment
         st.write("") 
-        run_bidb = st.button("🚀 biportal Üzerinde Çalıştır (Canlı)", type="primary", use_container_width=True)
+        run_bidb = st.button("🚀 bidb Üzerinde Çalıştır (Canlı)", type="primary", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     formatted_sql = tpl['sql_template'].replace("{{donem}}", donem_in)
     
     # --- SQL ACCORDION ---
     with st.expander("🔍 Güncel SQL Sorgusunu Görüntüle / Detaylar"):
-        st.markdown(f"Bu sorgu şu anda **biportal.{target_db}** üzerinde çalışacak.")
+        st.markdown(f"Bu sorgu şu anda **{target_db}** üzerinde çalışacak.")
         # Scrollable SQL box
         st.markdown(f'<div class="sql-scroll-box">{html.escape(formatted_sql)}</div>', unsafe_allow_html=True)
         st.caption("Bu sorguyu SSMS üzerinden manuel olarak da çalıştırabilirsiniz.")
@@ -2192,7 +2192,7 @@ def render_fix_sorgular():
     
     # --- RESULTS AREA ---
     if run_bidb:
-        with st.spinner(f"biportal.{target_db} sunucusuna bağlanılıyor..."):
+        with st.spinner(f"{target_db} sunucusuna bağlanılıyor..."):
             try:
                 start_time = time.time()
                 df_live = run_query_on_bidb(formatted_sql, database=target_db)
@@ -2237,7 +2237,7 @@ def render_fix_sorgular():
                 st.markdown('</div>', unsafe_allow_html=True)
 
             except Exception as e:
-                st.error(f"⚠️ biportal Hatası: {str(e)}")
+                st.error(f"⚠️ Bağlantı Hatası: {str(e)}")
                 st.info("İpucu: ODBC Driver yanısıra VPN bağlantınızın açık olduğundan emin olun.")
 
     # --- EMAIL SECTION ---
@@ -2255,17 +2255,17 @@ def render_fix_sorgular():
             with m_col3:
                 e_sender = st.text_input("Sizin E-Postanız", placeholder="esra.akinci@kariyer.net")
             with m_col4:
-                e_pass = st.text_input("Kurumsal Parolanız", type="password", help="Şifreniz sistemde kaydedilmez, sadece anlık gönderim için kullanılır.")
+                e_pass = st.text_input("Kurumsal Parolanız", type="password", help="Bunu boş bırakırsanız sistem arka planda açık olan Outlook'unuzu kullanarak otomatik gönderim dener (sadece kendi bilgisayarınızda çalışır).")
                 
             e_body = st.text_area("Mesaj Notu (Opsiyonel)", value="Merhaba,\n\nİlgili döneme ait FinalCheck sorgu sonuçları ekteki dosyada ve aşağıdaki tabloda sunulmuştur.\n\nİyi çalışmalar.")
             
             if st.button("📤 E-Postayı Gönder", type="primary", use_container_width=True):
-                if not e_to or not e_sender or not e_pass:
-                    st.error("Lütfen alıcı, gönderen ve parola alanlarını doldurun.")
-                elif not e_to.endswith("@kariyer.net") and not e_sender.endswith("@kariyer.net"):
-                    st.warning("Bu altyapı genellikle sadece @kariyer.net adresleri (Office 365) için yetkilendirilmiştir.")
+                if not e_to or not e_sender:
+                    st.error("Lütfen en azından Alıcı ve Gönderen alanlarını doldurun.")
+                elif not e_pass and os.name != 'nt':
+                    st.error("Lütfen güvenli gönderim için parolanızı girin (Bulutta Outlook otomasyonu çalışmaz).")
                 else:
-                    with st.spinner("📧 Mail gönderiliyor... (Office 365 bağlantısı kuruluyor)"):
+                    with st.spinner("📧 Mail gönderiliyor..."):
                         try:
                             # Table HTML
                             df_snap = st.session_state['last_df_live'].head(50)
@@ -2291,29 +2291,49 @@ def render_fix_sorgular():
                             
                             # Attachment
                             excel_bytes = st.session_state.get('last_excel_data')
-                            file_ext = "csv" if isinstance(excel_bytes, bytes) and b"," in excel_bytes[:20] else "xlsx" # crude check
+                            file_ext = "csv" if isinstance(excel_bytes, bytes) and b"," in excel_bytes[:20] else "xlsx"
                             
-                            msg = MIMEMultipart()
-                            msg['From'] = e_sender
-                            msg['To'] = e_to
-                            msg['Subject'] = e_subject
-                            msg.attach(MIMEText(styled_html, 'html', 'utf-8'))
-                            
-                            if excel_bytes:
-                                part = MIMEApplication(excel_bytes, Name=f"Sonuclar.{file_ext}")
-                                part['Content-Disposition'] = f'attachment; filename="FinalCheck_{st.session_state.get("last_donem")}.{file_ext}"'
-                                msg.attach(part)
+                            if not e_pass and os.name == 'nt':
+                                # Güvenli Localhost Outlook Hook (Şifre gerektirmez)
+                                import win32com.client as win32
+                                import tempfile
                                 
-                            server = smtplib.SMTP("smtp.office365.com", 587)
-                            server.starttls()
-                            server.login(e_sender, e_pass)
-                            server.send_message(msg)
-                            server.quit()
-                            
-                            st.success(f"✅ E-posta {e_to} adresine başarıyla gönderildi!")
+                                outlook = win32.Dispatch('outlook.application')
+                                mail = outlook.CreateItem(0)
+                                mail.To = e_to
+                                mail.Subject = e_subject
+                                mail.HTMLBody = styled_html
+                                
+                                if excel_bytes:
+                                    tmp_path = os.path.join(tempfile.gettempdir(), f"FinalCheck_{st.session_state.get('last_donem')}.{file_ext}")
+                                    with open(tmp_path, "wb") as tp:
+                                        tp.write(excel_bytes)
+                                    mail.Attachments.Add(tmp_path)
+                                    
+                                mail.Send()
+                                st.success(f"✅ E-posta arka plandaki Outlook'unuz üzerinden {e_to} adresine başarıyla gönderildi!")
+                            else:
+                                # Klasik Office 365 SMTP
+                                msg = MIMEMultipart()
+                                msg['From'] = e_sender
+                                msg['To'] = e_to
+                                msg['Subject'] = e_subject
+                                msg.attach(MIMEText(styled_html, 'html', 'utf-8'))
+                                
+                                if excel_bytes:
+                                    part = MIMEApplication(excel_bytes, Name=f"Sonuclar.{file_ext}")
+                                    part['Content-Disposition'] = f'attachment; filename="FinalCheck_{st.session_state.get("last_donem")}.{file_ext}"'
+                                    msg.attach(part)
+                                    
+                                server = smtplib.SMTP("smtp.office365.com", 587)
+                                server.starttls()
+                                server.login(e_sender, e_pass)
+                                server.send_message(msg)
+                                server.quit()
+                                st.success(f"✅ E-posta Office 365 ile {e_to} adresine başarıyla gönderildi!")
                         except Exception as em_err:
                             st.error(f"E-Posta Gönderilemedi: {em_err}")
-                            st.info("Eğer Office 365 kullanıyorsanız ve MFA (Çift Aşamalı Doğrulama) açıksa 'Uygulama Parolası' gerekebilir.")
+                            st.info("Eğer Outlook ile gönderim yapıyorsanız, Outlook'un bilgisayarınızda açık ve yetkili olduğundan emin olun.")
 
     # --- MANUAL UPLOAD SECTION ---
     st.markdown("<br><br>", unsafe_allow_html=True)

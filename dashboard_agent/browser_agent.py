@@ -326,16 +326,12 @@ class RaportalBrowserAgent:
     async def _wait_for_report_ready(self) -> None:
         """
         Raporun (SSRS veya Power BI) tamamen yüklendiğinden emin olmak için evrensel akıllı bekleme yapar.
-        1. Ana sayfa ve tüm iframe'lerdeki 'Loading/Yükleniyor' metinlerini recursive olarak tarar.
-        2. Görünür bir yükleme uyarısı kalmayana kadar bekler.
-        3. Bir kez temizlendiğinde 3 saniye bekleyip tekrar kontrol eder (multi-phase loading için).
         """
         import time
         start_wait = time.time()
         timeout_sec = MAX_REPORT_LOAD_WAIT_MS / 1000
         
         async def _any_loader_visible() -> bool:
-            # Tüm frame'ler için ortak locator string
             combined_selector = (
                 "text=/Loading/i, text=/Yükleniyor/i, text=/Bekleyiniz/i, text=/Loading data/i, "
                 "#ReportViewerControl_AsyncWait, .ReportViewerControl_AsyncWait, "
@@ -354,11 +350,10 @@ class RaportalBrowserAgent:
             return False
 
         async def _any_visual_proof_visible() -> bool:
-            """Raporun gerçekten 'veri' içerdiğine dair görsel kanıt arar (Grafik, Tablo vb.)."""
             proof_selectors = [
                 "svg.mainGraphicsContext", "canvas", ".visual-container", 
                 ".visualContent", "table[id*='Tablix'] tr", "[id*='VisibleReportContent'] table tr",
-                ".card", ".gauge" # PBI ve SSRS ortak görsel elemanları
+                ".card", ".gauge"
             ]
             combined_proof = ", ".join(proof_selectors)
             for frame in self.page.frames:
@@ -367,47 +362,34 @@ class RaportalBrowserAgent:
                     for loc in locators:
                         if await loc.is_visible():
                             box = await loc.bounding_box()
-                            # En az 10x10 boyutunda bir görsel eleman veri kanıtıdır
                             if box and box['width'] > 10 and box['height'] > 10:
                                 return True
                 except Exception:
                     continue
             return False
 
-        # 1. Aşama: Konteyner Tespiti (SSRS veya PBI Shell)
-        report_containers = "#ReportViewerControl, .reportContainer, .pbi-root, .rootContent"
+        # 1. Aşama: Konteyner Tespiti
         try:
-            await self.page.wait_for_selector(report_containers, timeout=15000)
+            await self.page.wait_for_selector("#ReportViewerControl, .reportContainer, .pbi-root", timeout=10000)
         except Exception:
             pass 
             
-        # 2. Aşama: Görsel Kanıt Döngüsü (Visual Proof of Life)
-        # Sadece loader'ın gitmesini bekleme; grafik/tablo'nun GELMESİNİ bekle.
+        # 2. Aşama: Görsel Kanıt Döngüsü
         proof_start = time.time()
-        visual_timeout = 25 # Görsel kanıt için max 25 sn bekle
+        visual_timeout = 15
         
         while (time.time() - start_wait) < timeout_sec:
-            elapsed_proof = time.time() - proof_start
-            
-            has_loader = await _any_loader_visible()
-            has_proof  = await _any_visual_proof_visible()
-            
-            # Eğer yükleme bittiyse VE en az bir grafik/tablo göründüyse TAMAMDIR
-            if not has_loader and has_proof:
+            if not await _any_loader_visible() and await _any_visual_proof_visible():
                 break
-                
-            # Fail-safe: 25 saniye geçtiyse ve hala kanıt yoksa (belki rapor boştur) devam et
-            if elapsed_proof > visual_timeout and not has_loader:
+            if (time.time() - proof_start) > visual_timeout and not await _any_loader_visible():
                 break
-                
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
 
-        # 3. Aşama: Son Bir Stabilite Kontrolü
-        await asyncio.sleep(1.5)
+        # 3. Aşama: Stabilite
+        await asyncio.sleep(0.8)
 
-        # 6. Aşama: DOM Stability Check (Iframe içerikleri dahil)
+        # 4. Aşama: DOM Stability Check
         try:
-            stability_limit = DOM_STABILITY_WAIT_MS
             await self.page.evaluate(f"""
                 async (limit) => {{
                     return new Promise((resolve) => {{
@@ -424,34 +406,30 @@ class RaportalBrowserAgent:
                             }});
                             return {{ count, text }};
                         }};
-                        
                         let last = getMetrics();
                         let stableCycles = 0;
-                        const checkInterval = 500;
+                        const checkInterval = 400;
                         const targetCycles = Math.ceil(limit / checkInterval);
-                        
                         const interval = setInterval(() => {{
                             const current = getMetrics();
                             if (current.count === last.count && current.text === last.text) {{
                                 stableCycles++;
                             }} else {{
-                                stableCycles = 0;
-                                last = current;
+                                stableCycles = 0; last = current;
                             }}
                             if (stableCycles >= targetCycles) {{
-                                clearInterval(interval);
-                                resolve();
+                                clearInterval(interval); resolve();
                             }}
                         }}, checkInterval);
-                        setTimeout(() => {{ clearInterval(interval); resolve(); }}, 60000);
+                        setTimeout(() => {{ clearInterval(interval); resolve(); }}, 20000);
                     }});
                 }}
-            """, stability_limit)
+            """, DOM_STABILITY_WAIT_MS)
         except Exception:
             pass
 
-        # 4. Aşama: Final Buffer (Önemli ölçüde azaltıldı)
-        await self.page.wait_for_timeout(2000)
+        # 5. Aşama: Final Buffer
+        await self.page.wait_for_timeout(800)
 
     async def screenshot(self, name: str = "screenshot") -> Path:
         """Full-page screenshot al; Streamlit cache sorunu olmaması için timestamp ekler."""

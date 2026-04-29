@@ -56,6 +56,21 @@ def get_visionary_history(limit: int = 5) -> List[Dict]:
     history.sort(key=lambda x: x["timestamp"], reverse=True)
     return history[:limit]
 
+def delete_visionary_request(request_id: str):
+    """Belirli bir geçmiş kaydını siler (ID veya Timestamp bazlı)."""
+    history = _load_raw_history()
+    # Filter by ID or Timestamp (for older entries)
+    new_history = [
+        entry for entry in history 
+        if str(entry.get("id")) != str(request_id) and str(entry.get("timestamp")) != str(request_id)
+    ]
+    
+    try:
+        with open(VISIONARY_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(new_history, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 def _load_raw_history() -> List[Dict]:
     """JSON dosyasından tüm geçmişi yükler."""
     if not VISIONARY_HISTORY_FILE.exists():

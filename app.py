@@ -12,6 +12,8 @@ import pyodbc
 import json
 import os
 import sys
+from datetime import datetime, timedelta
+
 from pathlib import Path
 
 # Fix: Ensure the virtual environment's libraries are always preferred
@@ -35,7 +37,7 @@ from pbi_robot_engine import trigger_pbi_robot_export
 from dashboard_agent.config import GEMINI_MODEL
 from dashboard_agent.analyzer import suggest_report_template
 from dashboard_agent.data_context import get_real_world_entities
-from dashboard_agent.history_manager import save_visionary_request, get_visionary_history
+from dashboard_agent.history_manager import save_visionary_request, get_visionary_history, delete_visionary_request
 try:
     from raportal_vision import RaportalVisionAgent
     VISION_ENABLED = True
@@ -54,9 +56,40 @@ try:
 except ImportError:
     genai = None
 
+def save_schedule(template_name, recipient):
+    """Schedules a report for monthly automated delivery."""
+    config_dir = Path(__file__).resolve().parent / "config"
+    config_dir.mkdir(exist_ok=True)
+    path = config_dir / "schedules.json"
+    
+    schedules = []
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                schedules = json.load(f)
+        except: schedules = []
+            
+    # Check if exists
+    for s in schedules:
+        if s.get("template_name") == template_name and s.get("recipient") == recipient:
+            return False, "Bu zamanlama zaten mevcut."
+            
+    schedules.append({
+        "template_name": template_name,
+        "recipient": recipient,
+        "active": True,
+        "last_run": "Henüz çalışmadı",
+        "status": "Bekliyor",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(schedules, f, indent=4)
+    return True, "Zamanlama başarıyla kaydedildi."
+
 # --- DATABASE HELPERS ---
-def get_bidb_connection(server="biportal", database="Raportal"):
-    """biportal sunucusuna Windows Authentication ile (SSMS Ayarlarıyla) bağlanır."""
+def get_bidb_connection(server="bidb", database="Raportal"):
+    """bidb sunucusuna Windows Authentication ile (SSMS Ayarlarıyla) bağlanır."""
     drivers = [
         '{ODBC Driver 18 for SQL Server}',
         '{ODBC Driver 17 for SQL Server}',
@@ -71,18 +104,18 @@ def get_bidb_connection(server="biportal", database="Raportal"):
     for driver in drivers:
         try:
             conn_str = f"Driver={driver};{base_params}"
-            return pyodbc.connect(conn_str, timeout=1)
+            return pyodbc.connect(conn_str, timeout=10)
         except Exception:
             # Fallback: Encrypt kapatmayı dene (bazı sürücüler için)
             try:
                 conn_str_alt = f"Driver={driver};Server={server};Database={database};Trusted_Connection=yes;Encrypt=no;"
-                return pyodbc.connect(conn_str_alt, timeout=1)
+                return pyodbc.connect(conn_str_alt, timeout=10)
             except:
                 continue
     return None
 
-def run_query_on_bidb(sql, server="biportal", database="Raportal"):
-    """Verilen SQL sorgusunu biportal üzerinde çalıştırır."""
+def run_query_on_bidb(sql, server="bidb", database="Raportal"):
+    """Verilen SQL sorgusunu bidb üzerinde çalıştırır."""
     conn = get_bidb_connection(server=server, database=database)
     if not conn:
         raise ConnectionError(f"[{server}] sunucusuna bağlanılamadı. Lütfen VPN kontrolü yapın.")
@@ -92,639 +125,279 @@ def run_query_on_bidb(sql, server="biportal", database="Raportal"):
         conn.close()
 
 def to_excel(df):
+    """DataFrame'i Kariyer.net kurumsal renkleriyle (mor başlık) şık bir Excel'e dönüştürür."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
+        df.to_excel(writer, index=False, sheet_name='Sonuçlar')
+        
+        workbook  = writer.book
+        worksheet = writer.sheets['Sonuçlar']
+        
+        # Stil tanımları
+        header_fill = PatternFill(start_color='8C28E8', end_color='8C28E8', fill_type='solid')
+        header_font = Font(color='FFFFFF', bold=True, name='Segoe UI')
+        header_alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Başlık satırını boya ve filtre ekle
+        for col_num, value in enumerate(df.columns.values):
+            cell = worksheet.cell(row=1, column=col_num + 1)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+        
+        # Filtreleri aktif et
+        worksheet.auto_filter.ref = worksheet.dimensions
+        
+        # Sütun genişliklerini içeriğe göre ayarla (Auto-fit)
+        for column_cells in worksheet.columns:
+            length = max(len(str(cell.value)) for cell in column_cells)
+            # Minimum 12, maksimum 50 genişlik
+            worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 12), 50)
+            
     return output.getvalue()
-
+            
 APP_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/icon?family=Material+Icons+Outlined');
 
+:root {
+    --kariyer-purple: #8c28e8;
+    --kariyer-purple-dark: #1e1b4b;
+    --kariyer-indigo: #6366f1;
+    --kariyer-bg: #f8fafc;
+    --sidebar-bg: #1e1b4b;
+}
+
 html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Outfit', sans-serif;
 }
 
 .stApp {
-    background-color: #f7f9fc;
+    background-color: var(--kariyer-bg);
 }
 
-/* Sidebar Styling - Narrower and more subtle */
+/* --- Sidebar Modernization --- */
 section[data-testid="stSidebar"] {
-    background-color: #8c28e8 !important;
-    background-image: none !important;
-    border-right: none !important;
-    width: 280px !important;
+    background-color: var(--sidebar-bg) !important;
 }
 
-[data-testid="stSidebar"] > div:first-child {
-    width: 280px !important;
-}
-
-section[data-testid="stSidebar"] .stMarkdown h1, 
-section[data-testid="stSidebar"] .stMarkdown h2, 
-section[data-testid="stSidebar"] .stMarkdown h3, 
-section[data-testid="stSidebar"] .stMarkdown h4,
-section[data-testid="stSidebar"] .stMarkdown p,
-section[data-testid="stSidebar"] label {
-    color: #ffffff !important;
-}
-
-/* Specific fix for selectbox and text input visibility in sidebar */
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"],
-section[data-testid="stSidebar"] .stTextInput input {
-    background-color: #ffffff !important;
-    color: #000000 !important;
-    border: 1px solid #e2e8f0 !important;
-}
-
-section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * {
-    color: #000000 !important;
-}
-
-/* Placeholder color fix */
-section[data-testid="stSidebar"] input::placeholder {
-    color: #718096 !important;
-    opacity: 1;
-}
-
-/* Fix dropdown menu items (the list when opened) */
-div[data-baseweb="popover"] ul {
-    background-color: #ffffff !important;
-}
-
-div[data-baseweb="popover"] li {
-    color: #000000 !important;
-}
-
-/* SERVER CONNECT BUTTON PREMIUM STYLING */
-.server-connect-container button {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important; /* Connected Green Gradient */
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: 0.75rem !important;
-    padding: 0.6rem 1rem !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
-}
-
-.server-connect-container-disconnected button {
-    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important; /* Disconnected Indigo Gradient */
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: 0.75rem !important;
-    padding: 0.6rem 1rem !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-.server-connect-container button:hover, .server-connect-container-disconnected button:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15) !important;
-    filter: brightness(1.1);
-}
-
-.status-badge {
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 0.7rem;
+.sidebar-brand {
+    padding: 1.5rem 1rem;
+    font-size: 1.3rem;
     font-weight: 800;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 1rem;
+}
+
+.brand-icon {
+    color: #38bdf8;
+    font-size: 1.8rem !important;
+}
+
+/* Sidebar Nav Buttons */
+section[data-testid="stSidebar"] div.stButton > button {
+    background: transparent !important;
+    color: rgba(255,255,255,0.6) !important;
+    border: none !important;
+    padding: 0.7rem 1rem !important;
+    border-radius: 12px !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+    width: 100% !important;
+}
+
+/* Force inner content to the left */
+section[data-testid="stSidebar"] div.stButton > button div[data-testid="stMarkdownContainer"] p {
+    text-align: left !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+}
+
+/* Handle the button's internal flex container */
+section[data-testid="stSidebar"] div.stButton > button > div {
+    display: flex !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    width: 100% !important;
+}
+
+section[data-testid="stSidebar"] div.stButton > button:hover {
+    background: rgba(255,255,255,0.05) !important;
+    color: white !important;
+}
+
+/* Sidebar Active Button */
+section[data-testid="stSidebar"] div.stButton > button[kind="primary"] {
+    background: linear-gradient(90deg, rgba(140, 40, 232, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%) !important;
+    color: white !important;
+    font-weight: 700 !important;
+    box-shadow: inset 0 0 0 1px rgba(140, 40, 232, 0.4) !important;
+}
+
+/* Status Cards in Sidebar */
+.gemini-status-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 1rem;
+    margin: 1rem 0;
+    backdrop-filter: blur(10px);
+}
+
+/* --- Page Heroes --- */
+.hero-box {
+    background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%);
+    border-radius: 24px;
+    padding: 2.5rem;
+    color: white;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 2rem;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+}
+
+.hero-box-light {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 24px;
+    padding: 2.5rem;
+    color: #1e1b4b;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.02);
+}
+
+.hero-title {
+    font-size: 2.8rem;
+    font-weight: 900;
+    letter-spacing: -1.5px;
+    margin: 0;
+    line-height: 1.1;
+}
+
+.hero-desc {
+    font-size: 1.1rem;
+    opacity: 0.8;
+    margin-top: 10px;
+    max-width: 600px;
+}
+
+/* --- Custom Cards --- */
+.feature-card {
+    background: white;
+    border-radius: 24px;
+    padding: 2rem;
+    border: 1px solid #f1f5f9;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.03);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.feature-icon-box {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
+/* --- Form & Inputs --- */
+.premium-form-box {
+    background: white;
+    border-radius: 24px;
+    padding: 2rem;
+    border: 1px solid #f1f5f9;
+}
+
+/* --- Buttons --- */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(90deg, #8c28e8 0%, #6366f1 100%) !important;
+    border: none !important;
+    padding: 0.6rem 2rem !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    color: white !important;
+    box-shadow: 0 10px 20px rgba(140, 40, 232, 0.2) !important;
+    width: 100% !important;
+}
+
+/* --- Custom Toggles --- */
+div[data-testid="stCheckbox"] {
+    background: #f8fafc;
+    padding: 10px 15px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+/* --- Insights Sidebar (Info) --- */
+.info-sidebar-box {
+    background: #f8fafc;
+    border-radius: 16px;
+    padding: 1.5rem;
+    border: 1px solid #e2e8f0;
+}
+
+.info-step {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.step-num {
+    background: #eef2ff;
+    color: #6366f1;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+/* Status Badges & Pills */
+.status-pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
     display: inline-flex;
     align-items: center;
     gap: 5px;
 }
-.status-badge-on { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
-.status-badge-off { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
-    color: #1a1a1a !important;
-}
+.status-pill-on { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
+.status-pill-off { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
 
-/* Reset icon font for material-icons class */
-.material-icons-outlined {
-    font-family: 'Material Icons Outlined' !important;
-    font-size: 20px;
-    margin-right: 12px;
-    vertical-align: middle;
-}
-
-.sidebar-brand {
-    display: flex;
-    align-items: center;
-    padding: 1rem 0.75rem 1.5rem 0.75rem;
-    font-weight: 800;
-    font-size: 1.2rem;
-    letter-spacing: -0.01em;
-}
-
-.sidebar-menu-item {
-    display: flex;
-    align-items: center;
-    padding: 0.6rem 0.75rem;
-    margin: 0.2rem 0.5rem;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-decoration: none;
-    color: rgba(255, 255, 255, 0.8) !important;
-}
-
-.sidebar-menu-item.active {
-    background-color: rgba(255, 255, 255, 0.15) !important;
-    color: #ffffff !important;
-}
-
-.sidebar-menu-item:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Streamlit Button Overrides to match sidebar menu */
-div.stButton > button.sidebar-btn {
-    background-color: transparent !important;
-    color: rgba(255, 255, 255, 0.8) !important;
-    border: none !important;
-    padding: 0.75rem 1rem !important;
-    width: 100% !important;
-    text-align: left !important;
-    display: flex !important;
-    align-items: center !important;
-    font-weight: 600 !important;
-    font-size: 0.95rem !important;
-    border-radius: 10px !important;
-    margin-bottom: 0.25rem !important;
-}
-
-div.stButton > button.sidebar-btn:hover {
-    background-color: rgba(255, 255, 255, 0.1) !important;
-    color: #ffffff !important;
-}
-
-div.stButton > button.sidebar-btn-active {
-    background-color: rgba(255, 255, 255, 0.15) !important;
-    color: #ffffff !important;
-    border: none !important;
-    padding: 0.75rem 1rem !important;
-    width: 100% !important;
-    text-align: left !important;
-    display: flex !important;
-    align-items: center !important;
-    font-weight: 600 !important;
-    font-size: 0.95rem !important;
-    border-radius: 10px !important;
-}
-
-.sql-container {
-    background: #1e1e1e;
-    color: #d4d4d4;
+.server-connect-container-wrapper {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
     padding: 1rem;
-    border-radius: 8px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.9rem;
-    overflow-x: auto;
-    border-left: 4px solid #8c28e8;
     margin: 1rem 0;
+    backdrop-filter: blur(10px);
+}
+/* --- Global Streamlit UI Cleanup --- */
+[data-testid="stHeader"] {
+    display: none;
+}
+.main .block-container {
+    padding-top: 2rem !important;
 }
 
-.stHeader {
-    background: transparent !important;
-}
-
-/* Connection Cards */
-.conn-card {
-    background: white;
-    padding: 1.5rem;
-    border-radius: 20px;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-    margin-bottom: 1rem;
-    width: 100%;
-}
-.conn-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1rem;
-}
-.conn-title-area {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.conn-title {
-    font-size: 1.25rem;
-    font-weight: 800;
-    color: #1a1a1a;
-}
-.conn-badge {
-    background: #eef2ff;
-    color: #4f46e5;
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-size: 10px;
-    font-weight: 700;
-}
-.conn-status-glass {
-    background: rgba(243, 244, 246, 0.8);
-    padding: 4px 12px;
-    border-radius: 50px;
-    font-size: 11px;
-    text-align: right;
-}
-.conn-url {
-    color: #6b7280;
-    font-size: 13px;
-    margin-bottom: 1.5rem;
-    word-break: break-all;
-}
-.conn-detail-row {
-	display: flex;
-	justify-content: space-between;
-	margin-bottom: 0.5rem;
-	font-size: 14px;
-}
-.conn-label { color: #6b7280; }
-.conn-value { color: #1a1a1a; font-weight: 600; }
-.conn-actions {
-	display: flex;
-	gap: 10px;
-	margin-top: 1.5rem;
-}
-.btn-outline {
-	flex: 1;
-	padding: 8px;
-	border: 1px solid #e5e7eb;
-	border-radius: 10px;
-	text-align: center;
-	font-size: 13px;
-	font-weight: 600;
-	color: #4f46e5;
-	background: white;
-}
-.btn-filled {
-	flex: 1;
-	padding: 8px;
-	border-radius: 10px;
-	text-align: center;
-	font-size: 13px;
-	font-weight: 600;
-	color: #059669;
-	background: #ecfdf5;
-	border: 1px solid #d1fae5;
-}
-
-.main-header {
-    display: flex;
-    align-items: center;
-    padding-bottom: 2rem;
-}
-
-.header-logo {
-    background: #f3e8ff;
-    color: #8c28e8;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 12px;
-    font-size: 20px;
-}
-
-.header-title {
-    font-weight: 700;
-    font-size: 1.25rem;
-    color: #1a1a1a;
-}
-
-.welcome-text h1 {
-    font-weight: 800;
-    font-size: 2.2rem;
-    margin-bottom: 0.5rem;
-    color: #1a1a1a;
-}
-
-.welcome-text p {
-    color: #6b7280;
-    font-size: 1.05rem;
-    margin-bottom: 2rem;
-}
-
-.visionary-card {
-    background: linear-gradient(135deg, #ffffff 0%, #f3f0ff 100%);
-    border: 2px solid #8c28e8;
-    border-radius: 20px;
-    padding: 2rem;
-    margin-bottom: 2rem;
-    box-shadow: 0 10px 25px rgba(140, 40, 232, 0.1);
-    position: relative;
-    overflow: hidden;
-}
-
-.visionary-card::after {
-    content: "✨";
-    position: absolute;
-    right: -10px;
-    top: -10px;
-    font-size: 80px;
-    opacity: 0.1;
-    transform: rotate(15deg);
-}
-
-.visionary-title {
-    color: #8c28e8;
-    font-size: 1.5rem;
-    font-weight: 800;
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: center;
-}
-
-.visionary-result {
-    background: white;
-    padding: 1.5rem;
-    border-radius: 12px;
-    border: 1px dashed #8c28e8;
-    margin-top: 1.5rem;
-}
-
-/* Workflow Indicator */
-.workflow-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 1.5rem;
-    margin-bottom: 2.5rem;
-    background: white;
-    padding: 1rem;
-    border-radius: 50px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-}
-
-.workflow-label {
-    font-weight: 700;
-    font-size: 0.75rem;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-right: 12px;
-}
-
-.workflow-step {
-    display: flex;
-    align-items: center;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #a855f7;
-}
-
-.workflow-step span {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border: 2px solid #a855f7;
-    border-radius: 50%;
-    margin-right: 8px;
-    font-size: 0.7rem;
-}
-
-.workflow-arrow {
-    color: #d1d5db;
-    margin: 0 4px;
-    font-family: 'Material Icons Outlined' !important;
-    font-size: 18px;
-}
-
-/* Navigation Cards */
-.nav-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;
-    margin-bottom: 2rem;
-}
-
-.nav-card {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    transition: all 0.3s;
-    cursor: pointer;
-    position: relative;
-}
-
-.nav-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
-    border-color: #8c28e8;
-}
-
-.card-num {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    color: #e5e7eb;
-    font-size: 0.75rem;
-    font-weight: 700;
-}
-
-.card-icon {
-    width: 48px;
-    height: 48px;
-    background: #fdfbff;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    margin-bottom: 1.25rem;
-    color: #8c28e8;
-}
-
-.card-title {
-    font-weight: 700;
-    font-size: 1.1rem;
-    color: #1a1a1a;
-    margin-bottom: 0.5rem;
-}
-
-.card-desc {
-    font-size: 0.9rem;
-    color: #6b7280;
-    line-height: 1.5;
-}
-
-/* Result Cards */
-.result-card {
-    background: white;
-    border-radius: 16px;
-    padding: 1.5rem;
-    border: 1px solid #e5e7eb;
-    border-left: 6px solid #8c28e8;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-}
-
-.result-title {
-    font-weight: 700;
-    font-size: 1.2rem;
-    color: #1a1a1a;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-}
-
-.field-label {
-    font-weight: 700;
-    font-size: 0.75rem;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 12px;
-    margin-bottom: 4px;
-}
-
-.field-value {
-    font-size: 0.95rem;
-    color: #374151;
-    line-height: 1.5;
-    margin-bottom: 8px;
-}
-.badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 20px;
-    background: #f3e8ff;
-    color: #8c28e8;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-right: 8px;
-}
-
-.badge-pop {
-    background: #ecfdf5;
-    color: #059669;
-}
-
-.result-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-.result-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-/* Professional Card & SQL Scroll Styles */
-.custom-card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    border: 1px solid #e5e7eb;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-}
-
-.sql-scroll-box {
-    max-height: 400px;
-    overflow-y: auto;
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 15px;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 0.85rem;
-    line-height: 1.45;
-    color: #333;
-    white-space: pre-wrap;
-    word-break: break-all;
-}
-
-div[data-testid="stExpander"] details summary {
-    font-weight: 700 !important;
-    color: #1a1a1a !important;
-}
-
-/* Report Browser Styles */
-.browser-container {
-    padding: 1rem;
-    background: #fdfbff;
-    border-radius: 12px;
-}
-
-.category-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 20px;
-}
-
-.category-chip {
-    padding: 6px 16px;
-    border-radius: 30px;
-    background: white;
-    border: 1px solid #e5e7eb;
-    color: #6b7280;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.category-chip:hover {
-    border-color: #8c28e8;
-    color: #8c28e8;
-}
-
-.category-chip.active {
-    background: #8c28e8;
-    color: white;
-    border-color: #8c28e8;
-}
-
-.browser-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 15px;
-    max-height: 450px;
-    overflow-y: auto;
-    padding: 10px;
-    border: 1px solid #f3e8ff;
-    border-radius: 8px;
-    background: #fff;
-}
-
-.browser-card {
-    padding: 12px;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.85rem;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-}
-
-.browser-card:hover {
-    border-color: #8c28e8;
-    background: #fdfbff;
-    transform: translateY(-2px);
-}
 </style>
 """
+
 
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
@@ -856,18 +529,82 @@ def generate_pbi_ai_insight(metadata, model_name):
         return f"AI yorumu oluşturulamadı: {e}"
 
 
+def render_server_status_logic(suffix="pop"):
+    # --- SQL CONNECTION POPOVER (Improved Styling) ---
+    if "biportal_conn" not in st.session_state:
+        st.session_state.biportal_conn = False
+    
+    is_conn = st.session_state.get("biportal_conn")
+    
+    # Status Row (Unified to avoid empty bubbles)
+    status_pill_html = f'<div class="status-pill status-pill-on">ONLINE</div>' if is_conn else f'<div class="status-pill status-pill-off">OFFLINE</div>'
+    
+    st.markdown(
+        f'<div class="server-connect-container-wrapper">'
+        f'<div style="display: flex; align-items: center; justify-content: space-between;">'
+        f'<div style="font-size: 0.85rem; font-weight: 700; color: rgba(255,255,255,0.8); display: flex; align-items: center; gap: 8px;">'
+        f'<span class="material-icons-outlined" style="font-size: 1.2rem; color: #38bdf8;">storage</span> Sunucu'
+        f'</div>'
+        f'{status_pill_html}'
+        f'</div>'
+        f'</div>', 
+        unsafe_allow_html=True
+    )
+    
+    st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+    
+    # Action Button (Popover)
+    with st.popover("🖥️ Bağlantı Ayarları", use_container_width=True):
+        st.markdown("### 🔌 SQL Server Login")
+        st.caption("BIDB veritabanına bağlanmak için bilgilerinizi girin.")
+        
+        sql_user = st.text_input("Windows User", value=st.session_state.get("sb_sql_user", "esra.akinci"), key=f"sb_sql_user_{suffix}")
+        sql_pass = st.text_input("Password", value=st.session_state.get("sb_sql_pass", "Ea93934430."), type="password", key=f"sb_sql_pass_{suffix}")
+        sql_srv  = st.text_input("Server", value=st.session_state.get("sb_sql_srv", "biportal"), key=f"sb_sql_srv_{suffix}")
+        sql_db   = st.text_input("Database", value=st.session_state.get("sb_sql_db", "Raportal"), key=f"sb_sql_db_{suffix}")
+        sql_dom  = st.text_input("Domain", value=st.session_state.get("sb_sql_domain", "KARIYER"), key=f"sb_sql_domain_{suffix}")
+        
+        if st.session_state.biportal_conn:
+            if st.button("🛑 Bağlantıyı Kes", use_container_width=True, type="secondary", key=f"sb_sql_disconnect_{suffix}"):
+                st.session_state.biportal_conn = False
+                if "prof_catalog_df" in st.session_state:
+                    del st.session_state.prof_catalog_df
+                st.success("Bağlantı kesildi.")
+                st.rerun()
+        else:
+            if st.button("🚀 Bağlantıyı Kur", use_container_width=True, type="primary", key=f"sb_sql_btn_{suffix}"):
+                with st.spinner("Bağlanıyor..."):
+                    try:
+                        st.session_state.sb_sql_user = sql_user
+                        st.session_state.sb_sql_pass = sql_pass
+                        st.session_state.sb_sql_srv = sql_srv
+                        st.session_state.sb_sql_db = sql_db
+                        st.session_state.sb_sql_domain = sql_dom
+                        
+                        conn = get_bidb_connection(server=sql_srv, database=sql_db)
+                        if conn:
+                            st.session_state.biportal_conn = True
+                            st.success("Bağlantı başarılı!")
+                            st.rerun()
+                        else:
+                            st.error("Bağlantı kurulamadı.")
+                    except Exception as e:
+                        st.error(f"Hata: {e}")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # API Authentication with Google Gemini
 def check_authentication():
     if "api_key" not in st.session_state:
         st.session_state.api_key = None
     if "active_page" not in st.session_state:
-        st.session_state.active_page = "Dashboard"
+        st.session_state.active_page = "Anasayfa"
 
     with st.sidebar:
         st.markdown(
             """
             <div class="sidebar-brand">
-                <span class="material-icons-outlined" style="font-size: 1.8rem; margin-right: 12px; color: white;">analytics</span> Raportal Agent
+                <span class="material-icons-outlined brand-icon">hub</span> Raportal Agent
             </div>
             """,
             unsafe_allow_html=True,
@@ -875,183 +612,133 @@ def check_authentication():
 
         # Functional Sidebar Menu
         pages = [
-            {"name": "Dashboard", "icon": "dashboard"},
-            {"name": "Raportal Insights Hub", "icon": "verified"},
-            {"name": "PBIT İndir", "icon": "download"},
-            {"name": "Fix Sorgular", "icon": "history_edu"},
-            {"name": "PBIX Analizi", "icon": "analytics"},
-            {"name": "Hakkında", "icon": "info"},
+            {"name": "Anasayfa"},
+            {"name": "Raportal Insights Hub"},
+            {"name": "Dashboard"},
+            {"name": "Fix Sorgular"},
+            {"name": "PBIX Analizi"},
+            {"name": "Hakkında"},
         ]
 
         for p in pages:
             is_active = st.session_state.active_page == p["name"]
-            btn_class = "sidebar-btn-active" if is_active else "sidebar-btn"
-            if st.button(f"{p['name']}", key=f"nav_{p['name']}", help=p["name"], use_container_width=True, type="secondary"):
+            btn_key = f"nav_{p['name']}"
+            btn_type = "primary" if is_active else "secondary"
+            
+            # Icon mapping (Using Emojis for better compatibility)
+            icon_map = {
+                "Anasayfa": "🏠",
+                "Raportal Insights Hub": "🧠",
+                "Dashboard": "📊",
+                "Fix Sorgular": "⚡",
+                "PBIX Analizi": "📈",
+                "Hakkında": "ℹ️"
+            }
+            icon = icon_map.get(p["name"], "🔵")
+            
+            # Render button with icon using HTML for better control if needed, 
+            # but standard st.button with type is better for logic.
+            # We'll use the CSS to make it look right.
+            if st.button(p["name"], key=btn_key, use_container_width=True, type=btn_type, icon=icon):
                 st.session_state.active_page = p["name"]
                 st.rerun()
 
-        st.markdown("<br><hr style='border-color: rgba(255,255,255,0.2)'><br>", unsafe_allow_html=True)
-        st.markdown("#### Gemini Bağlantısı")
-
+        st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+        
+        # --- GEMINI CONNECTION (BEAUTIFIED) ---
         if not st.session_state.get('api_key'):
+            st.markdown("""
+                <div style="background: linear-gradient(135deg, rgba(140, 40, 232, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%); 
+                            border: 1px solid rgba(140, 40, 232, 0.3); border-radius: 20px; padding: 1.5rem; margin: 1rem 0; 
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <div style="display: flex; align-items: center; gap: 10px; color: #c084fc; font-weight: 900; font-size: 1rem; margin-bottom: 10px;">
+                        <span class="material-icons-outlined" style="font-size: 1.4rem;">auto_awesome</span>
+                        AI Aktivasyonu
+                    </div>
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-bottom: 0; line-height: 1.5;">
+                        Platformun akıllı özelliklerini kullanabilmek için <b>Gemini API</b> anahtarınızı aşağıya tanımlayın.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
             api_key_input = st.text_input(
-                "Google Gemini API Key",
+                "Gemini API Anahtarı",
                 type="password",
-                placeholder="https://aistudio.google.com",
-                key="gemini_api_key_widget"
+                placeholder="Anahtarınızı buraya yapıştırın...",
+                key="gemini_api_key_widget",
+                help="Google AI Studio'dan aldığınız anahtar."
             )
             if api_key_input:
                 new_key = api_key_input.strip()
                 st.session_state.api_key = new_key
-                with st.spinner("Anahtar doğrulanıyor ve modeller taranıyor..."):
-                    try:
-                        genai.configure(api_key=new_key)
-                        valid_models = []
-                        for m in genai.list_models():
-                            if 'generateContent' in m.supported_generation_methods:
-                                valid_models.append(m.name.replace("models/", ""))
-                        if valid_models:
-                            st.session_state.available_models = sorted(valid_models)
-                            st.session_state.selected_model = valid_models[0]
-                        else:
-                            st.error("Uyumlu model bulunamadı.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Anahtar veya bağlantı hatası: {e}")
-                        if "403" in str(e) and "IP" in str(e):
-                            st.warning("⚠️ Bu anahtarda IP kısıtlaması var. Lütfen şirket ağından/VPN'den bağlandığınızdan veya Proxy ayarlarınızın doğru olduğundan emin olun.")
-                        # Still set the key so they can try to fix network and scan again manually
-                        st.rerun()
-            
-            # --- MODEL SELECTION (Moved here for better ergonomics) ---
-            if st.session_state.get("available_models"):
-                st.markdown("#### 🧠 Yorumcu Modeli")
-                current_models = st.session_state.available_models
-                default_idx = 0
-                if st.session_state.get("selected_model") in current_models:
-                    default_idx = current_models.index(st.session_state.selected_model)
-                
-                selected_model = st.selectbox(
-                    "Kullanılacak Yapay Zeka",
-                    options=current_models,
-                    index=default_idx,
-                    key="sb_model_selector",
-                    help="Raporları analiz edecek Gemini modelini seçin."
-                )
-                if selected_model != st.session_state.get("selected_model"):
-                    st.session_state.selected_model = selected_model
-                    st.rerun()
-        else:
-            st.success("✅ API Key Doğrulandı")
-            
-            # --- MODEL SELECTION WHEN AUTHENTICATED ---
-            if st.session_state.get("available_models"):
-                st.markdown("#### 🧠 Yorumcu Modeli")
-                current_models = st.session_state.available_models
-                default_idx = 0
-                if st.session_state.get("selected_model") in current_models:
-                    default_idx = current_models.index(st.session_state.selected_model)
-                
-                selected_model = st.selectbox(
-                    "Kullanılacak Yapay Zeka",
-                    options=current_models,
-                    index=default_idx,
-                    key="sb_model_selector_auth",
-                    help="Raporları analiz edecek Gemini modelini seçin."
-                )
-                if selected_model != st.session_state.get("selected_model"):
-                    st.session_state.selected_model = selected_model
-                    st.rerun()
-            if st.button("🛑 Çıkış Yap / Sıfırla", use_container_width=True):
-                st.session_state.api_key = None
-                st.session_state.available_models = []
-                st.session_state.active_page = "Dashboard"
-                if "gemini_api_key_widget" in st.session_state:
-                    del st.session_state["gemini_api_key_widget"]
                 st.rerun()
+        else:
+            st.markdown("""
+                <div class="gemini-status-card">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+                        <div style="display: flex; align-items: center; gap: 8px; color: #10b981; font-weight: 700; font-size: 0.85rem;">
+                            <span class="material-icons-outlined" style="font-size: 1.1rem;">auto_awesome</span>
+                            Gemini aktif
+                        </div>
+                        <span class="material-icons-outlined" style="color: #10b981; font-size: 1.2rem;">check_circle</span>
+                    </div>
+                    <div style="font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-left: 26px;">API Key doğrulandı</div>
+                </div>
+            """, unsafe_allow_html=True)
             
-            if st.button("🔍 Erişilebilir Modelleri Tara", help="API anahtarınızın hangi modellere yetkisi olduğunu kontrol eder."):
-                with st.spinner("Modeller taranıyor..."):
-                    try:
-                        valid_models = []
-                        # Blacklist for models that report generateContent but fail with "Interactions API Only"
-                        blacklist = ["deep-research", "preview", "search", "interaction"]
-                        
-                        for m in genai.list_models():
-                            name = m.name.replace("models/", "")
-                            if 'generateContent' in m.supported_generation_methods:
-                                # Strict filtering: Skip research/preview/search models
-                                if any(x in name.lower() for x in blacklist):
-                                    continue
-                                
-                                # Canary Test: Can the model actually respond?
-                                try:
-                                    test_model = genai.GenerativeModel(name)
-                                    # Tiny test to see if it's an "Interactions Only" model
-                                    test_model.generate_content("hi", generation_config={"max_output_tokens": 1})
-                                    valid_models.append(name)
-                                except Exception:
-                                    # Fallback: if canary fails (e.g. 400 Interactions API), skip it
-                                    continue
-                        
-                        if valid_models:
-                            st.session_state.available_models = sorted(valid_models)
-                            st.success(f"✅ {len(valid_models)} uyumlu model bulundu.")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("Hiçbir uyumlu model bulunamadı. Lütfen anahtar yetkilerini kontrol edin.")
-                    except Exception as e:
-                        st.error(f"Tarama sırasında hata oluştu: {e}")
-                        if "403" in str(e) and "IP" in str(e):
-                            st.warning("⚠️ NOT: Bu API anahtarında IP kısıtlaması var gibi görünüyor. Şirket ağından veya VPN ile bağlı olduğunuzdan emin olun.")
-        
-        # --- SQL CONNECTION POPOVER (Improved Styling) ---
-        if "biportal_conn" not in st.session_state:
-            st.session_state.biportal_conn = False
-        
-        is_conn = st.session_state.get("biportal_conn")
-        btn_class = "server-connect-container" if is_conn else "server-connect-container-disconnected"
-        
-        st.markdown(f'<div class="{btn_class}">', unsafe_allow_html=True)
-        c_col1, c_col2 = st.columns([3, 1])
-        with c_col1:
-            with st.popover("🖥️ Sunucuya Bağlan", use_container_width=True):
-                st.markdown("### 🔌 SQL Server Login")
-                sql_user = st.text_input("Windows User", value=st.session_state.get("sb_sql_user", "esra.akinci"), key="sb_sql_user_pop")
-                sql_pass = st.text_input("Password", value=st.session_state.get("sb_sql_pass", "Ea93934430."), type="password", key="sb_sql_pass_pop")
-                sql_srv  = st.text_input("Server", value=st.session_state.get("sb_sql_srv", "biportal"), key="sb_sql_srv_pop")
-                sql_db   = st.text_input("Database", value=st.session_state.get("sb_sql_db", "Raportal"), key="sb_sql_db_pop")
-                sql_dom  = st.text_input("Domain", value=st.session_state.get("sb_sql_domain", "KARIYER"), key="sb_sql_domain_pop")
+            if st.session_state.get("available_models"):
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                current_models = st.session_state.available_models
+                default_idx = 0
+                if st.session_state.get("selected_model") in current_models:
+                    default_idx = current_models.index(st.session_state.selected_model)
                 
-                if st.button("🚀 Bağlantıyı Kur", use_container_width=True, type="primary"):
-                    with st.spinner("Bağlanıyor..."):
+                st.markdown("<div style='font-size: 0.8rem; font-weight: 700; color: rgba(255,255,255,0.6); margin-bottom: 5px;'>Aktif Model</div>", unsafe_allow_html=True)
+                selected_model = st.selectbox(
+                    "Model",
+                    options=current_models,
+                    index=default_idx,
+                    key="sb_model_selector_new",
+                    label_visibility="collapsed"
+                )
+                if selected_model != st.session_state.get("selected_model"):
+                    st.session_state.selected_model = selected_model
+                    st.rerun()
+
+            col_a1, col_a2 = st.columns(2)
+            with col_a1:
+                if st.button("🔍 Modelleri Tara", use_container_width=True, key="scan_models_btn"):
+                    with st.spinner("Taranıyor..."):
                         try:
-                            st.session_state.sb_sql_user = sql_user
-                            st.session_state.sb_sql_pass = sql_pass
-                            st.session_state.sb_sql_srv = sql_srv
-                            st.session_state.sb_sql_db = sql_db
-                            st.session_state.sb_sql_domain = sql_dom
-                            
-                            conn = get_bidb_connection(server=sql_srv, database=sql_db)
-                            if conn:
-                                st.session_state.biportal_conn = True
-                                st.success("Bağlantı başarılı!")
-                                st.rerun()
-                            else:
-                                st.error("Bağlantı kurulamadı.")
+                            genai.configure(api_key=st.session_state.api_key)
+                            models = []
+                            for m in genai.list_models():
+                                if 'generateContent' in m.supported_generation_methods:
+                                    models.append(m.name.replace('models/', ''))
+                            st.session_state.available_models = sorted(models)
+                            st.success(f"{len(models)} model bulundu.")
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Hata: {e}")
-                
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        with c_col2:
-            if st.session_state.get("biportal_conn"):
-                st.markdown('<div class="status-badge status-badge-on">ONLINE</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="status-badge status-badge-off">OFFLINE</div>', unsafe_allow_html=True)
+            with col_a2:
+                if st.button("🛑 Sıfırla", use_container_width=True, key="reset_api_btn"):
+                    st.session_state.api_key = None
+                    st.session_state.available_models = []
+                    st.rerun()
+
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        # --- SIMULATION MODE ---
+        st.markdown("""
+            <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px;">
+                <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 5px; font-weight: 700;">🔧 TEKNİK ÖNİZLEME</div>
+            </div>
+        """, unsafe_allow_html=True)
+        st.checkbox("🚀 Simülasyon Modu", value=st.session_state.get("sim_mode", False), key="sim_mode_toggle", help="API hatası durumunda gerçekçi örneklerle çalışmanızı sağlar.")
+        st.session_state.sim_mode = st.session_state.sim_mode_toggle
+
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        # --- SQL CONNECTION SECTION ---
+        render_server_status_logic(suffix="sidebar")
 
 
 
@@ -1063,6 +750,19 @@ if st.session_state.api_key:
     # Auto-clean the key every rerun for safety
     st.session_state.api_key = st.session_state.api_key.strip()
     genai.configure(api_key=st.session_state.api_key)
+    
+    # Auto-fetch models if not present
+    if not st.session_state.get("available_models"):
+        try:
+            models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    models.append(m.name.replace('models/', ''))
+            st.session_state.available_models = sorted(models)
+            if GEMINI_MODEL not in st.session_state.available_models:
+                st.session_state.available_models.append(GEMINI_MODEL)
+        except Exception:
+            st.session_state.available_models = [GEMINI_MODEL]
 
 
 def normalize_text(text: str) -> str:
@@ -1895,49 +1595,143 @@ def render_report_browser(df, col_map):
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-def render_dashboard_header():
-    st.markdown(
-        """
-        <div style="background: linear-gradient(135deg, #8c28e8 0%, #4c1d95 100%); padding: 2rem; border-radius: 20px; color: white; margin-bottom: 2rem; box-shadow: 0 10px 25px rgba(140,40,232,0.2);">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="background: rgba(255,255,255,0.2); width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 28px;">⚡</div>
-                <div>
-                    <h1 style="margin: 0; font-size: 1.8rem; font-weight: 800; letter-spacing: -0.5px;">Hızlı Analiz Merkezi</h1>
-                    <p style="margin: 0; opacity: 0.9; font-size: 1rem;">Forensik rapor DNA taraması ve AI destekli iş içgörüleri.</p>
+def render_home():
+    render_premium_header(
+        title_main="Raportal Agent'a",
+        title_highlight="Hoş Geldiniz!",
+        subtitle="Yapay zeka destekli raporlama ekosistemimize hoş geldiniz.",
+        icon="👋",
+        icon_color="white",
+        gradient_start="#1e1b4b",
+        gradient_end="#4c1d95",
+        highlight_gradient="linear-gradient(90deg, #d8b4fe 0%, #f472b6 100%)",
+        tags=[
+            ("auto_awesome", "AI Destekli", "#d8b4fe"),
+            ("database", "Veri Odaklı", "#818cf8")
+        ]
+    )
+
+    # Feature Cards
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.html(f"""
+<div class="feature-card">
+    <div class="feature-icon-box" style="background: #eef2ff; color: #6366f1;">
+        <span class="material-icons-outlined">grid_view</span>
+    </div>
+    <h3 style="margin: 0; color: #1e1b4b; font-size: 1.3rem; font-weight: 800;">Dashboard</h3>
+    <p style="margin: 15px 0; color: #64748b; font-size: 0.9rem; line-height: 1.6; flex-grow: 1;">
+        Rapor performanslarını izle, trendleri keşfet ve veriye dayalı kararlar al.
+    </p>
+</div>
+""")
+        if st.button("Dashboard'a Git →", key="go_dash", use_container_width=True):
+            st.session_state.active_page = "Dashboard"
+            st.rerun()
+
+    with col2:
+        st.html(f"""
+<div class="feature-card">
+    <div class="feature-icon-box" style="background: #fdf2f8; color: #db2777;">
+        <span class="material-icons-outlined">insights</span>
+    </div>
+    <h3 style="margin: 0; color: #1e1b4b; font-size: 1.3rem; font-weight: 800;">Raportal Insights Hub</h3>
+    <p style="margin: 15px 0; color: #64748b; font-size: 0.9rem; line-height: 1.6; flex-grow: 1;">
+        Akıllı analizlerle içgörüler üret, rapor DNA’sını keşfet ve öngörüleri yakala.
+    </p>
+</div>
+""")
+        if st.button("Insights Hub'a Git →", key="go_hub", use_container_width=True):
+            st.session_state.active_page = "Raportal Insights Hub"
+            st.rerun()
+
+    with col3:
+        st.markdown(f"""
+            <div class="feature-card">
+                <div class="feature-icon-box" style="background: #f0fdf4; color: #16a34a;">
+                    <span class="material-icons-outlined">search</span>
                 </div>
+                <h3 style="margin: 0; color: #1e1b4b; font-size: 1.3rem; font-weight: 800;">Fix Sorgular</h3>
+                <p style="margin: 15px 0; color: #64748b; font-size: 0.9rem; line-height: 1.6; flex-grow: 1;">
+                    SQL süreçlerini otomatikleştirin, hataları çöz ve sonuçları anında e-posta ile al.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Fix Sorgulara Git →", key="go_fix", use_container_width=True):
+            st.session_state.active_page = "Fix Sorgular"
+            st.rerun()
+
+    # Bottom Status Bar
+    st.html("""
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.2rem; margin-top: 30px; display: flex; align-items: center; gap: 20px;">
+    <div style="background: #eef2ff; padding: 10px; border-radius: 12px;">
+        <span class="material-icons-outlined" style="color: #6366f1;">auto_awesome</span>
+    </div>
+    <div>
+        <div style="font-weight: 800; color: #1e1b4b; font-size: 0.95rem;">Akıllı. Hızlı. Güvenilir.</div>
+        <div style="color: #64748b; font-size: 0.85rem;">Raportal Agent, kurumunuzun raporlama süreçlerini hızlandırır, hataları azaltır ve stratejik içgörüler sunar.</div>
+    </div>
+    <div style="margin-left: auto; opacity: 0.4;">
+        <span class="material-icons-outlined" style="font-size: 3rem;">security</span>
+    </div>
+</div>
+""")
+
+def render_premium_header(title_main, title_highlight, subtitle, icon, icon_color, gradient_start, gradient_end, highlight_gradient, tags=None):
+    """Premium header component shared across modules."""
+    tag_html = ""
+    if tags:
+        for t_icon, t_text, t_color in tags:
+            tag_html += f"""
+            <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px;">
+                <span class="material-icons-outlined" style="color: {t_color}; font-size: 1.1rem;">{t_icon}</span>
+                <span style="font-size: 0.8rem; font-weight: 600; color: white;">{t_text}</span>
+            </div>
+            """
+
+    st.html(f"""
+<div class="hero-box" style="padding: 3rem; background: linear-gradient(135deg, {gradient_start} 0%, {gradient_end} 100%); min-height: 250px; margin-bottom: 20px;">
+    <div style="display: flex; align-items: center; gap: 30px; position: relative; z-index: 2;">
+        <div style="background: rgba(255,255,255,0.05); width: 80px; height: 80px; border-radius: 20px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);">
+            <span class="material-icons-outlined" style="font-size: 2.5rem; color: {icon_color};">{icon}</span>
+        </div>
+        <div>
+            <h1 style="margin:0; color:white; font-size: 2.5rem; font-weight:800; font-family: 'Outfit', sans-serif;">
+                {title_main} <span style="background: {highlight_gradient}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">{title_highlight}</span>
+            </h1>
+            <p style="margin: 5px 0 0 0; color:rgba(255,255,255,0.7); font-size: 1.1rem; font-family: 'Outfit', sans-serif;">{subtitle}</p>
+            <div style="display: flex; gap: 15px; margin-top: 15px;">
+                {tag_html}
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+    </div>
+</div>
+""")
+
+def render_dashboard_header():
+    render_premium_header(
+        title_main="Raportal",
+        title_highlight="Vizyoneri",
+        subtitle="Yapay Zeka Destekli Rapor ve Dashboard Mimarı",
+        icon="auto_awesome",
+        icon_color="#38bdf8",
+        gradient_start="#1e1b4b",
+        gradient_end="#4c1d95",
+        highlight_gradient="linear-gradient(90deg, #d8b4fe 0%, #f472b6 100%)",
+        tags=[
+            ("architecture", "Layout", "#a78bfa"),
+            ("query_stats", "Metrik", "#38bdf8")
+        ]
     )
 
 def render_dashboard():
     render_dashboard_header()
     
-    # Workflow Steps
-    st.markdown(
-        """
-        <div class="workflow-container">
-            <div class="workflow-label">ANALİZ AKIŞI</div>
-            <div class="workflow-step"><span>1</span> İhtiyaç Tanımı</div>
-            <div class="workflow-arrow">chevron_right</div>
-            <div class="workflow-step"><span>2</span> Metadata Eşleşme</div>
-            <div class="workflow-arrow">chevron_right</div>
-            <div class="workflow-step"><span>3</span> AI Skorlama</div>
-            <div class="workflow-arrow">chevron_right</div>
-            <div class="workflow-step"><span>4</span> Rapor Önerisi</div>
-            <div class="workflow-arrow">chevron_right</div>
-            <div class="workflow-step"><span>5</span> Detaylı Analiz</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     if not st.session_state.api_key:
         st.info("👋 Sol menüden API anahtarını girerek devam edebilirsin.")
         st.stop()
 
-    # Load Data
     try:
         df, source_name = load_metadata()
         df, col_map = prepare_columns(df)
@@ -1945,406 +1739,453 @@ def render_dashboard():
         st.error(f"Dosya yüklenemedi: {e}")
         st.stop()
 
-    selected_model = st.session_state.get("selected_model", GEMINI_MODEL)
-
-    if "sample_query" not in st.session_state:
-        st.session_state.sample_query = ""
-
-    # --- VISIONARY ARCHITECT SECTION ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown('<div class="visionary-card">', unsafe_allow_html=True)
-    st.markdown('<div class="visionary-title"><span class="material-icons-outlined" style="margin-right: 12px;">auto_awesome</span>Raportal Vizyoneri</div>', unsafe_allow_html=True)
+    tab_new, tab_history = st.tabs(["✨ Yeni Tasarım Yap", "🕛 Geçmiş Taleplerim"])
     
-    tab_design, tab_history = st.tabs(["🏗️ Tasarım Motoru", "🕛 Geçmiş Taleplerim"])
-    
-    with tab_design:
-        st.write("Eğer aradığın rapor henüz mevcut değilse, ihtiyacını buraya yaz; senin için bir Kariyer.net standartlarında rapor taslağı oluşturalım.")
-    
-    col_v1, col_v2 = st.columns([5, 1])
-    with col_v1:
-        v_prompt = st.text_area(
-            "İş ihtiyacını tarif et...",
-            placeholder="Örn: Portföy yöneticilerinin aylık müşteri ziyaret sayıları ile satış hedefleri arasındaki korelasyonu gösteren bir tasarım yap...",
-            label_visibility="collapsed",
-            height=100
-        )
-        
-        # --- NEW: Report Type & File Upload Row ---
-        v_sub_col1, v_sub_col2 = st.columns([1, 1])
-        with v_sub_col1:
-            v_report_type = st.selectbox(
-                "🎯 Hedef Rapor Formatı",
-                options=["Otomatik (AI Karar Versin)", "Power BI (Dashboard)", "SSRS (Matbu/Liste)", "Excel (Çalışma Dosyası)"]
-            )
-        with v_sub_col2:
-            v_uploaded_file = st.file_uploader(
-                "📂 Kendi Verini Analiz Et (Excel/CSV)",
-                type=["xlsx", "xls", "csv"],
-                help="Dosyadaki kolon isimlerini temel alan bir tasarım kurgulanır."
-            )
-            
-    with col_v2:
-        st.markdown("<div style='height: 48px;'></div>", unsafe_allow_html=True)
-        design_clicked = st.button("DİZAYN ET ✨", type="secondary", use_container_width=True)
-    
-    if design_clicked and v_prompt:
-        # 1. Clear ALL relevant state to ensure a fresh UI for the new request
-        st.session_state.visionary_result = None
-        st.session_state.v_real_entities = None
-        st.session_state.v_inspiration = []
-        
-        # This will communicate to the UI that the previous mockup is no longer valid
-        if "visionary_mockup_valid" in st.session_state:
-            st.session_state.visionary_mockup_valid = False
-        
-        excel_context = ""
-        if v_uploaded_file:
-            with st.spinner("📦 Dosya yapısı analiz ediliyor..."):
-                try:
-                    import pandas as pd
-                    if v_uploaded_file.name.endswith(".csv"):
-                        try:
-                            df_ex = pd.read_csv(v_uploaded_file, sep=";", encoding="utf-8-sig")
-                        except:
-                            df_ex = pd.read_csv(v_uploaded_file, sep=",", encoding="utf-8-sig")
-                    else:
-                        df_ex = pd.read_excel(v_uploaded_file)
-                    
-                    # Kolonlar ve örnek head
-                    cols = df_ex.columns.tolist()
-                    head_md = df_ex.head(3).to_markdown()
-                    excel_context = f"Kolonlar: {', '.join(cols)}\n\nÖrnek Veri:\n{head_md}"
-                except Exception as ex:
-                    st.warning(f"Dosya okuma hatası: {ex}. Genel tasarıma devam edilecek.")
-        
-        # Step 1: Metadata Inspiration Search
-        with st.spinner("Raportal kataloğu ilham için taranıyor..."):
-            inspiration_matches = search_reports(df, v_prompt, col_map)
-            st.session_state.v_inspiration = inspiration_matches[:3] if inspiration_matches else []
-            
-            ins_context = ""
-            ins_urls = []
-            if inspiration_matches:
-                ins_urls = [m['url'] for m in inspiration_matches if m.get('url')]
-                ins_context = "\n".join([f"- {m['name']} (Path: {m['path']})" for m in inspiration_matches[:3]])
-        
-        # Step 2: Deep Visual Inspiration Scan
-        ins_data = []
-        if ins_urls:
-            with st.spinner("💡 Bulunan benzer raporlar görsel olarak inceleniyor (bu işlem ~30 sn sürebilir)..."):
-                # Use current user credentials from session
-                u = st.session_state.get("username", "")
-                p = st.session_state.get("password", "")
-                d = st.session_state.get("domain", NTLM_DOMAIN)
-                ins_data = run_visual_inspiration(ins_urls, u, p, d)
-        
-        # Step 3: Real-World Entity Fetch (Data-Driven Design)
-        with st.spinner("📊 Gerçek Kariyer.net dünyasından veriler çekiliyor (İKÇO, Bölümler)..."):
-            real_ens = get_real_world_entities()
-            st.session_state.v_real_entities = real_ens
+    with tab_new:
+        st.html(f"""
+<div style="background: white; border: 1px solid #e2e8f0; border-radius: 20px; padding: 1.5rem; display: flex; align-items: center; gap: 20px; margin-bottom: 20px;">
+    <div style="background: #f8fafc; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0;">
+        <span class="material-icons-outlined" style="color: #8c28e8;">auto_awesome</span>
+    </div>
+    <div>
+        <div style="font-weight: 800; color: #1e1b4b; font-size: 1rem;">İhtiyacınızı tarif edin, yapay zeka tasarımına başlasın.</div>
+        <div style="color: #64748b; font-size: 0.85rem;">Kariyer.net raporlama standartlarına uygun dashboard taslakları saniyeler içinde oluşturulur.</div>
+    </div>
+    <div style="margin-left: auto; opacity: 0.2;">
+        <span class="material-icons-outlined" style="font-size: 4rem;">chat_bubble_outline</span>
+    </div>
+</div>
+""")
 
-        # Step 4: AI Design Generation
-        with st.spinner("Raportal Vizyoneri senin için en iyi tasarımı planlıyor..."):
-            suggestion = suggest_report_template(
-                v_prompt, 
-                st.session_state.api_key, 
-                model_name=selected_model,
-                inspiration_context=ins_context,
-                inspiration_data=ins_data,
-                real_entities=st.session_state.get("v_real_entities"),
-                report_type=v_report_type,
-                excel_schema=excel_context
-            )
-            st.session_state.visionary_result = suggestion
-            
-            # Tasarım talebini geçmişe kaydet
-            save_visionary_request(v_prompt, suggestion)
-            
-            # Since the text is ready, but the image (latest_mockup.png) is still from the OLD request,
-            # we explicitly mark the mockup as INVALID until the assistant (me) updates it.
-            st.session_state.visionary_mockup_valid = False
-            
-            st.rerun()
-    
-    if st.session_state.get("visionary_result"):
-        st.markdown('<div class="visionary-result">', unsafe_allow_html=True)
-        
-        # PRO: Visual Data Badges
-        tags_cols = st.columns([1,1,1,2])
-        with tags_cols[0]:
-            st.markdown("✨ **AI Architect**")
-        if st.session_state.get("v_real_entities") and st.session_state.v_real_entities.get("bolumler"):
-            with tags_cols[1]:
-                st.markdown("🔗 **BIDB Connected**")
-            with tags_cols[2]:
-                st.markdown("🏢 **Real Entities**")
-            if st.session_state.v_real_entities.get("yenileme_tipleri"):
-                with tags_cols[3]:
-                    st.markdown("♻️ **Renewal Context**")
-        
-        # PRO: Visual Mockup Display (Only show if valid/fresh)
-        mockup_path = os.path.join(os.path.dirname(__file__), "assets", "visionary_mockups", "latest_mockup.png")
-        if os.path.exists(mockup_path) and st.session_state.get("visionary_mockup_valid", False):
-            st.markdown("#### 🎨 Görsel Tasarım Prototipi")
-            st.image(mockup_path, caption="Raportal Vizyoneri tarafından hazırlanan örnek dashboard tasarımı.", use_container_width=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-        elif st.session_state.get("visionary_result"):
-             st.info("🎨 Görsel prototip şu an AI tarafından senin için fırçalanıyor... Asistan görseli tamamladığında aşağıdaki butona basabilirsin.")
-             if st.button("Görsel Hazır mı? ✅", key="btn_validate_mockup"):
-                 st.session_state.visionary_mockup_valid = True
-                 st.rerun()
+        st.markdown('<div class="premium-form-box">', unsafe_allow_html=True)
+        col_f1, col_f2 = st.columns([1, 1])
+        with col_f1:
+            st.html("""
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+    <div style="background: #eef2ff; color: #6366f1; padding: 6px; border-radius: 8px;">
+        <span class="material-icons-outlined" style="font-size: 1.2rem;">bolt</span>
+    </div>
+    <div>
+        <div style="font-weight: 800; color: #1e1b4b; font-size: 1rem;">Hızlı Tasarım Tanımı</div>
+        <div style="font-size: 0.75rem; color: #64748b;">Rapor veya dashboard ihtiyacınızı aşağıda açıklayın.</div>
+    </div>
+</div>
+""")
+        with col_f2:
+            v_report_type = st.selectbox("Hedef Format", options=["Power BI", "SSRS", "Excel", "Otomatik"], key="v_format_pick")
 
-        # Inspiration Sources Display
-        if st.session_state.get("v_inspiration"):
-            st.markdown("##### 💡 İlham Alınan Raportal Raporları")
-            ins_cols = st.columns(len(st.session_state.v_inspiration))
-            for idx, m in enumerate(st.session_state.v_inspiration):
-                with ins_cols[idx]:
-                    tip = m.get('tip', 'Dashboard')
-                    icon = "📄" if tip == 'Report' else "📊"
-                    label = "SSRS" if tip == 'Report' else "PBI"
-                    st.caption(f"{icon} {label}: {m['name']}")
-            st.markdown("---")
+        v_prompt = st.text_area("Prompt", placeholder="Örn: Satış performansını izleyen bir dashboard...", height=120, label_visibility="collapsed", key="v_prompt_final")
+        
+        # Options Toggles
+        st.markdown("<div style='margin-top: 15px; margin-bottom: 20px;'>", unsafe_allow_html=True)
+        t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+        with t_col1: st.checkbox("📝 Yönetici Özeti", value=True, key="opt_exec")
+        with t_col2: st.checkbox("📈 Trend Vurgusu", value=False, key="opt_trend")
+        with t_col3: st.checkbox("📊 Karşılaştırmalı KPI", value=True, key="opt_comp")
+        with t_col4: st.button("+ Diğer Özellik Ekle", use_container_width=True, key="opt_add")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown(st.session_state.visionary_result)
-        # Download as Documentation
-        st.download_button(
-            "📥 Tasarımı Doküman Olarak İndir",
-            data=st.session_state.visionary_result,
-            file_name="raportal_tasarim_oneri.md",
-            mime="text/markdown",
-            key="dl_visionary"
-        )
-        if st.button("❌ Tasarımı Kapat", key="close_visionary"):
-            st.session_state.visionary_result = None
-            st.rerun()
+        design_clicked = st.button("✨ TASARIMI BAŞLAT", use_container_width=True, type="primary", key="btn_start_design_final")
         st.markdown('</div>', unsafe_allow_html=True)
+
+        if design_clicked and v_prompt:
+            # 1. Clear ALL relevant state
+            st.session_state.visionary_result = None
+            st.session_state.v_inspiration = []
+            st.session_state.v_real_entities = None
+            
+            # communicate to UI that mockup is invalid
+            if "visionary_mockup_valid" in st.session_state:
+                st.session_state.visionary_mockup_valid = False
+            
+            # Step 1: Catalog Inspiration Search
+            with st.spinner("🔍 Raportal kataloğu taranıyor..."):
+                inspiration_matches = search_reports(df, v_prompt, col_map)
+                st.session_state.v_inspiration = inspiration_matches[:3] if inspiration_matches else []
+                ins_context = "\n".join([f"- {m['name']} (Path: {m['path']})" for m in inspiration_matches[:3]])
+                ins_urls = [m['url'] for m in inspiration_matches if m.get('url')]
+            
+            # Step 2: Deep Visual Inspiration Scan
+            ins_data = []
+            if ins_urls:
+                with st.spinner("💡 Bulunan benzer raporlar görsel olarak inceleniyor..."):
+                    u, p, d = st.session_state.get("username", ""), st.session_state.get("password", ""), st.session_state.get("domain", NTLM_DOMAIN)
+                    ins_data = run_visual_inspiration(ins_urls, u, p, d)
+            
+            # Step 3: Real-World Entity Fetch
+            with st.spinner("📊 Kariyer.net dünyasından veriler çekiliyor (İKÇO, Bölümler)..."):
+                real_ens = get_real_world_entities()
+                st.session_state.v_real_entities = real_ens
+
+            # Step 4: AI Design Generation
+            with st.spinner("Raportal Vizyoneri tasarımı planlıyor..."):
+                if st.session_state.get("sim_mode"):
+                    time.sleep(1.5) # Simulate thinking
+                    suggestion = {
+                        "prompt": v_prompt,
+                        "suggestion": f"""
+### 📝 İhtiyaç Özeti
+Bu tasarım, **"{v_prompt}"** talebi için Kariyer.net standartlarında kurgulanmıştır. Temel amaç, veriye dayalı hızlı aksiyon alınmasını sağlamaktır.
+
+### Önerilen Dashboard Şablonu
+**Premium Visionary Matrix v2.0** - Karmaşık verileri sadeleştiren ve trend odaklı hiyerarşik bir yapı sunar.
+
+### Dashboard Tasarımı
+- **Üst Panel:** 4 Ana KPI (Sayısal ve Oransal karşılaştırmalı).
+- **Orta Panel:** Zaman bazlı trend grafiği (Alan grafiği).
+- **Alt Panel:** Detaylı veri matrisi ve kırılım tabloları.
+
+### KPI ve Boyutlar
+- **KPI'lar:** Dönemsel Değişim, Toplam Hacim, Verimlilik Oranı.
+- **Boyutlar:** Bölüm, İKÇO, Tarih, Yenileme Tipi.
+
+### Tasarım Gerekçesi
+Kariyer Moru (#8c28e8) vurgularıyla odak noktaları belirlenmiş, temiz beyaz alanlar (whitespace) ile okunabilirlik artırılmıştır.
+                        """
+                    }
+                    st.session_state.visionary_result = suggestion
+                else:
+                    suggestion_text = suggest_report_template(
+                        v_prompt, 
+                        st.session_state.api_key, 
+                        model_name=st.session_state.get("selected_model", GEMINI_MODEL),
+                        inspiration_context=ins_context,
+                        inspiration_data=ins_data,
+                        real_entities=st.session_state.get("v_real_entities"),
+                        report_type=v_report_type
+                    )
+                    suggestion = {
+                        "prompt": v_prompt,
+                        "suggestion": suggestion_text
+                    }
+                    st.session_state.visionary_result = suggestion
+                
+                mockup_path = os.path.join(os.path.dirname(__file__), "assets", "visionary_mockups", "latest_mockup.png")
+                if os.path.exists(mockup_path):
+                    from dashboard_agent.history_manager import save_visionary_request
+                    save_visionary_request(v_prompt, suggestion, image_path=mockup_path)
+                    try: os.remove(mockup_path)
+                    except: pass
+                else:
+                    from dashboard_agent.history_manager import save_visionary_request
+                    save_visionary_request(v_prompt, suggestion)
+                
+                st.session_state.visionary_mockup_valid = False
+                st.rerun()
+
+        if st.session_state.get("visionary_result"):
+            res = st.session_state.visionary_result
+            st.markdown('<div class="visionary-result">', unsafe_allow_html=True)
+            
+            # Data Badges
+            tags_cols = st.columns([1,1,1,2])
+            with tags_cols[0]: st.markdown("✨ **AI Architect**")
+            if st.session_state.get("v_real_entities") and st.session_state.v_real_entities.get("bolumler"):
+                with tags_cols[1]: st.markdown("🔗 **BIDB Connected**")
+                with tags_cols[2]: st.markdown("🏢 **Real Entities**")
+            
+            st.markdown(f"### ✨ Tasarım Prototipi: {res['prompt'][:50]}...")
+            
+            # --- IMAGE DISPLAY LOGIC (SIMULATION AWARE) ---
+            if st.session_state.get("sim_mode"):
+                # Use local demo mockup to avoid network restrictions
+                demo_path = os.path.join(os.path.dirname(__file__), "assets", "visionary_mockups", "demo_mockup.png")
+                if os.path.exists(demo_path):
+                    st.image(demo_path, caption="🚀 Simülasyon Modu: Premium Dashboard Örneği (Yerel Asset)", use_container_width=True)
+                else:
+                    st.warning("⚠️ Demo görseli bulunamadı. Lütfen varlıkları kontrol edin.")
+            else:
+                mockup_path = os.path.join(os.path.dirname(__file__), "assets", "visionary_mockups", "latest_mockup.png")
+                if os.path.exists(mockup_path) and st.session_state.get("visionary_mockup_valid", False):
+                    st.image(mockup_path, use_container_width=True)
+                else:
+                    st.info("🎨 Görsel prototip AI tarafından fırçalanıyor... Hazır olduğunda aşağıdaki butona basabilirsin.")
+                    if st.button("Görsel Hazır mı? ✅", key="btn_validate_mockup_final"):
+                        st.session_state.visionary_mockup_valid = True
+                        st.rerun()
+
+            st.markdown(res['suggestion'] if isinstance(res, dict) and 'suggestion' in res else str(res))
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("📊 Canlı Veriye Bağla", use_container_width=True):
+                    st.session_state.live_dashboard_data = load_metadata()[0]
+                    st.rerun()
+            with c2: st.download_button("📥 Tasarımı İndir", data=str(res), file_name="raportal_tasarim.md", key="dl_f_v")
+            
+            if st.button("❌ Kapat", key="close_f_v"):
+                st.session_state.visionary_result = None
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("live_dashboard_data") is not None:
+            df_live = st.session_state.live_dashboard_data
+            st.markdown('<div class="visionary-result" style="border-left: 4px solid #00f2fe;">', unsafe_allow_html=True)
+            st.markdown("### 🟢 CANLI VERİ EKRANI")
+            st.metric("Toplam Satır", f"{len(df_live):,}")
+            st.dataframe(df_live, use_container_width=True, height=300)
+            if st.button("❌ Canlı Ekranı Kapat", key="close_live_f"):
+                st.session_state.live_dashboard_data = None
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     with tab_history:
         st.markdown("#### 🕛 Son Tasarım Talepleriniz")
-        history = get_visionary_history(limit=10)
-        if not history:
-            st.info("Henüz bir tasarım talebiniz bulunmuyor.")
+        history = get_visionary_history(limit=50)
+        if not history: st.info("Henüz geçmiş talebiniz yok.")
         else:
             for item in history:
                 with st.expander(f"📌 {item['timestamp']} - {item['prompt'][:40]}..."):
-                    st.write(f"**Talep:** {item['prompt']}")
-                    st.markdown("---")
+                    col_ex_text, col_ex_del = st.columns([0.8, 0.2])
+                    with col_ex_text:
+                        st.write(f"**Talep:** {item['prompt']}")
+                    with col_ex_del:
+                        # Use id if exists, otherwise fallback to timestamp (for older entries)
+                        req_id = item.get("id", item.get("timestamp"))
+                        if st.button("🗑️ Kaydı Sil", key=f"del_h_{req_id}", use_container_width=True, help="Bu talebi geçmişten siler"):
+                            delete_visionary_request(req_id)
+                            st.rerun()
                     
-                    # Görsel varsa göster
+                    st.info(f"**AI Özeti:** {item['summary']}")
+                    
+                    # Restore image display
                     img_path = item.get("image_path")
                     if img_path:
-                        # Path logic: images are in assets/visionary_mockups/history/
                         full_img_path = os.path.join(os.path.dirname(__file__), img_path)
                         if os.path.exists(full_img_path):
                             st.image(full_img_path, caption=f"Tasarım Prototipi ({item['timestamp']})", use_container_width=True)
-                        else:
-                            st.warning("⚠️ Bu talebin tasarımı sistemde bulunamadı.")
                     
-                    st.info(f"**AI Özeti:** {item['summary']}")
-                    if st.button("Bu Talebi Tekrar Yükle", key=f"hist_tab_{item['timestamp']}"):
+                    if st.button("Yükle", key=f"hist_f_{item['timestamp']}"):
                         st.session_state.sample_query = item['prompt']
                         st.rerun()
+
+
+
+def send_outlook_mail(to, subject, body_html, attachment_bytes=None, attachment_name="Dosya.xlsx"):
+    """Windows üzerinde yüklü Outlook'u kullanarak mail gönderir."""
+    if os.name != 'nt':
+        return False, "Outlook otomasyonu sadece Windows üzerinde çalışır."
     
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
+    try:
+        import win32com.client as win32
+        import tempfile
+        
+        outlook = win32.Dispatch('outlook.application')
+        mail = outlook.CreateItem(0)
+        mail.To = to
+        mail.Subject = subject
+        mail.HTMLBody = body_html
+        
+        if attachment_bytes:
+            tmp_path = os.path.join(tempfile.gettempdir(), attachment_name)
+            with open(tmp_path, "wb") as tp:
+                tp.write(attachment_bytes)
+            mail.Attachments.Add(tmp_path)
+            
+        mail.Send()
+        return True, "Başarılı"
+    except Exception as e:
+        return False, str(e)
 
 def render_fix_sorgular():
-    st.markdown('<div class="section-title">Fix Sorgu Yönetimi</div>', unsafe_allow_html=True)
+    render_premium_header(
+        title_main="Fix",
+        title_highlight="Sorgular",
+        subtitle="Otomatik SQL Sorgu Yönetimi ve Çalıştırma Merkezi",
+        icon="code",
+        icon_color="#38bdf8",
+        gradient_start="#1e1b4b",
+        gradient_end="#4c1d95",
+        highlight_gradient="linear-gradient(90deg, #d8b4fe 0%, #f472b6 100%)",
+        tags=[
+            ("terminal", "Sorgu", "#a78bfa"),
+            ("auto_mode", "Otomasyon", "#38bdf8")
+        ]
+    )
     
     templates = load_query_templates()
     if not templates:
         st.warning("Henüz yüklü sorgu şablonu bulunamadı.")
         return
 
-    # --- TOP CARD: Selection & Parameters ---
-    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    col_sel1, col_sel2 = st.columns([2, 3])
-    with col_sel1:
-        selected_tpl_key = st.selectbox("Sorgu Şablonu", options=list(templates.keys()))
-        tpl = templates[selected_tpl_key]
-    with col_sel2:
-        st.caption("Şablon Açıklaması")
-        st.info(tpl['description'])
+    tab_run, tab_schedule = st.tabs(["🚀 Sorgu Çalıştır", "🕒 Otomatik Zamanlama"])
 
-    col_db1, col_db2, col_btn = st.columns([1.5, 1.5, 2])
-    with col_db1:
-        donem_in = st.text_input("Hedef Dönem", value="202603", help="Örn: 202603")
-    with col_db2:
-        target_db = st.text_input("Hedef Veritabanı", value="DWH", help="Varsayılan: DWH")
-    with col_btn:
-        st.write("") # Alignment
-        st.write("") 
-        run_bidb = st.button("🚀 biportal Üzerinde Çalıştır (Canlı)", type="primary", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    with tab_run:
 
-    formatted_sql = tpl['sql_template'].replace("{{donem}}", donem_in)
-    
-    # --- SQL ACCORDION ---
-    with st.expander("🔍 Güncel SQL Sorgusunu Görüntüle / Detaylar"):
-        st.markdown(f"Bu sorgu şu anda **biportal.{target_db}** üzerinde çalışacak.")
-        # Scrollable SQL box
-        st.markdown(f'<div class="sql-scroll-box">{html.escape(formatted_sql)}</div>', unsafe_allow_html=True)
-        st.caption("Bu sorguyu SSMS üzerinden manuel olarak da çalıştırabilirsiniz.")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # --- RESULTS AREA ---
-    if run_bidb:
-        with st.spinner(f"biportal.{target_db} sunucusuna bağlanılıyor..."):
-            try:
-                start_time = time.time()
-                df_live = run_query_on_bidb(formatted_sql, database=target_db)
-                end_time = time.time()
-                
-                st.success(f"Sorgu başarıyla tamamlandı! ({round(end_time - start_time, 2)} sn)")
-                
-                # Metrics card
-                st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Toplam Satır", len(df_live))
-                if "FinalCheckGelir" in df_live.columns:
-                    m2.metric("Toplam Gelir", f"{df_live['FinalCheckGelir'].sum():,.2f} TL")
-                if "TahsilatDurumu" in df_live.columns:
-                    rate = (df_live['TahsilatDurumu'].sum() / len(df_live)) * 100 if len(df_live) > 0 else 0
-                    m3.metric("Tahsilat Oranı", f"%{rate:,.1f}")
-                
-                st.dataframe(df_live.head(100), use_container_width=True, height=350)
-                
-                # Excel Download
-                try:
-                    excel_data = to_excel(df_live)
-                    st.session_state['last_excel_data'] = excel_data
-                    st.download_button(
-                        label="📥 Sonucu Excel Olarak İndir (Segoe Font & Mor Başlık)",
-                        data=excel_data,
-                        file_name=f"FinalCheck_{donem_in}_{int(time.time())}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                except Exception as ex:
-                    st.warning(f"Excel oluşturulamadı: {ex}")
-                    csv = df_live.to_csv(index=False).encode('utf-8-sig')
-                    st.session_state['last_excel_data'] = csv
-                    st.download_button("📥 CSV İndir", data=csv, file_name=f"FinalCheck_{donem_in}.csv", mime="text/csv")
-                
-                # Save to session to enable mailing
-                st.session_state['last_df_live'] = df_live
-                st.session_state['last_donem'] = donem_in
-                st.session_state['last_tpl_key'] = selected_tpl_key
-                
-                st.markdown('</div>', unsafe_allow_html=True)
+        # --- TOP CARD: Selection & Parameters ---
+        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+        
+        # Row 1: Template Selection
+        r1_col1, r1_col2 = st.columns([1, 1])
+        with r1_col1:
+            selected_tpl_key = st.selectbox("📝 Sorgu Şablonu", options=list(templates.keys()))
+            tpl = templates[selected_tpl_key]
+        with r1_col2:
+            st.markdown(f"""
+            <div style="background: #f0f7ff; padding: 12px; border-radius: 12px; border: 1px solid #dbeafe; min-height: 75px; display: flex; align-items: center; margin-top: 5px;">
+                <div style="font-size: 0.85rem; color: #1e40af; line-height: 1.4;">
+                    <strong>💡 Şablon Bilgisi:</strong><br>{tpl['description']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            except Exception as e:
-                st.error(f"⚠️ biportal Hatası: {str(e)}")
-                st.info("İpucu: ODBC Driver yanısıra VPN bağlantınızın açık olduğundan emin olun.")
+        st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+        
+        # Row 2: Parameters & Run Button
+        r2_col1, r2_col2, r2_col3 = st.columns([1, 1, 2])
+        with r2_col1:
+            donem_in = st.text_input("📅 Hedef Dönem", value="202603", help="Örn: 202603")
+        with r2_col2:
+            target_db = st.text_input("🗄️ Veritabanı", value="DWH", help="Varsayılan: DWH")
+        with r2_col3:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True) # Perfect alignment with inputs
+            run_bidb = st.button("🚀 bidb Üzerinde Çalıştır (Canlı)", type="primary", use_container_width=True)
 
-    # --- EMAIL SECTION ---
-    if 'last_df_live' in st.session_state and "finalcheck" in st.session_state.get('last_tpl_key', '').lower():
+        # Row 3: Auto Mail
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        m_auto_cols = st.columns([1, 1])
+        with m_auto_cols[0]:
+            auto_mail = st.checkbox("✉️ İşlem Sonrası Otomatik Mail Gönder", value=False)
+        with m_auto_cols[1]:
+            if auto_mail:
+                auto_to = st.text_input("Alıcı E-Posta", placeholder="isminiz@kariyer.net", key="fix_auto_to", label_visibility="collapsed")
+            else:
+                auto_to = ""
+                
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        formatted_sql = tpl['sql_template'].replace("{{donem}}", donem_in)
+        
+        # --- SQL ACCORDION ---
+        with st.expander("🔍 Güncel SQL Sorgusunu Görüntüle / Detaylar"):
+            st.markdown(f"Bu sorgu şu anda **{target_db}** üzerinde çalışacak.")
+            # Scrollable SQL box
+            st.markdown(f'<div class="sql-scroll-box">{html.escape(formatted_sql)}</div>', unsafe_allow_html=True)
+            st.caption("Bu sorguyu SSMS üzerinden manuel olarak da çalıştırabilirsiniz.")
+        
         st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("✉️ Sonuçları E-Posta Gönder", expanded=False):
-            st.markdown("Sonuç tablosunu **@kariyer.net** adreslerine anında iletin.")
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                e_to = st.text_input("Alıcı E-Posta", placeholder="ahmet@kariyer.net")
-            with m_col2:
-                e_subject = st.text_input("Konu", value=f"FinalCheck Sonuçları - {st.session_state.get('last_donem')}")
-                
-            m_col3, m_col4 = st.columns(2)
-            with m_col3:
-                e_sender = st.text_input("Sizin E-Postanız", placeholder="esra.akinci@kariyer.net")
-            with m_col4:
-                e_pass = st.text_input("Kurumsal Parolanız", type="password", help="Şifreniz sistemde kaydedilmez, sadece anlık gönderim için kullanılır.")
-                
-            e_body = st.text_area("Mesaj Notu (Opsiyonel)", value="Merhaba,\n\nİlgili döneme ait FinalCheck sorgu sonuçları ekteki dosyada ve aşağıdaki tabloda sunulmuştur.\n\nİyi çalışmalar.")
-            
-            if st.button("📤 E-Postayı Gönder", type="primary", use_container_width=True):
-                if not e_to or not e_sender or not e_pass:
-                    st.error("Lütfen alıcı, gönderen ve parola alanlarını doldurun.")
-                elif not e_to.endswith("@kariyer.net") and not e_sender.endswith("@kariyer.net"):
-                    st.warning("Bu altyapı genellikle sadece @kariyer.net adresleri (Office 365) için yetkilendirilmiştir.")
-                else:
-                    with st.spinner("📧 Mail gönderiliyor... (Office 365 bağlantısı kuruluyor)"):
-                        try:
-                            # Table HTML
-                            df_snap = st.session_state['last_df_live'].head(50)
-                            html_table = df_snap.to_html(index=False, classes="dataframe", border=1)
-                            styled_html = f"""
-                            <html>
-                            <head>
-                            <style>
-                                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
-                                .dataframe {{ border-collapse: collapse; width: 100%; font-size: 12px; }}
-                                .dataframe th {{ background-color: #8c28e8; color: white; padding: 8px; text-align: left; }}
-                                .dataframe td {{ border: 1px solid #ddd; padding: 8px; }}
-                                .dataframe tr:nth-child(even) {{ background-color: #f2f2f2; }}
-                            </style>
-                            </head>
-                            <body>
-                                <p>{e_body.replace(chr(10), '<br>')}</p>
-                                <h3>Özet Tablo (İlk 50 Satır)</h3>
-                                {html_table}
-                            </body>
-                            </html>
-                            """
-                            
-                            # Attachment
-                            excel_bytes = st.session_state.get('last_excel_data')
-                            file_ext = "csv" if isinstance(excel_bytes, bytes) and b"," in excel_bytes[:20] else "xlsx" # crude check
-                            
-                            msg = MIMEMultipart()
-                            msg['From'] = e_sender
-                            msg['To'] = e_to
-                            msg['Subject'] = e_subject
-                            msg.attach(MIMEText(styled_html, 'html', 'utf-8'))
-                            
-                            if excel_bytes:
-                                part = MIMEApplication(excel_bytes, Name=f"Sonuclar.{file_ext}")
-                                part['Content-Disposition'] = f'attachment; filename="FinalCheck_{st.session_state.get("last_donem")}.{file_ext}"'
-                                msg.attach(part)
-                                
-                            server = smtplib.SMTP("smtp.office365.com", 587)
-                            server.starttls()
-                            server.login(e_sender, e_pass)
-                            server.send_message(msg)
-                            server.quit()
-                            
-                            st.success(f"✅ E-posta {e_to} adresine başarıyla gönderildi!")
-                        except Exception as em_err:
-                            st.error(f"E-Posta Gönderilemedi: {em_err}")
-                            st.info("Eğer Office 365 kullanıyorsanız ve MFA (Çift Aşamalı Doğrulama) açıksa 'Uygulama Parolası' gerekebilir.")
+        
+        # --- RESULTS AREA ---
+        if run_bidb:
+            with st.spinner(f"{target_db} sunucusuna bağlanılıyor..."):
+                try:
+                    start_time = time.time()
+                    df_live = run_query_on_bidb(formatted_sql, database=target_db)
+                    end_time = time.time()
+                    
+                    st.success(f"Sorgu başarıyla tamamlandı! ({round(end_time - start_time, 2)} sn)")
+                    
+                    # Metrics card
+                    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Toplam Satır", len(df_live))
+                    if "FinalCheckGelir" in df_live.columns:
+                        m2.metric("Toplam Gelir", f"{df_live['FinalCheckGelir'].sum():,.2f} TL")
+                    if "TahsilatDurumu" in df_live.columns:
+                        rate = (df_live['TahsilatDurumu'].sum() / len(df_live)) * 100 if len(df_live) > 0 else 0
+                        m3.metric("Tahsilat Oranı", f"%{rate:,.1f}")
+                    
+                    st.dataframe(df_live.head(100), use_container_width=True, height=350)
+                    
+                    # Excel Download
+                    excel_data = None
+                    try:
+                        excel_data = to_excel(df_live)
+                        st.session_state['last_excel_data'] = excel_data
+                        st.download_button(
+                            label="📥 Sonucu Excel Olarak İndir (Segoe Font & Mor Başlık)",
+                            data=excel_data,
+                            file_name=f"FinalCheck_{donem_in}_{int(time.time())}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    except Exception as ex:
+                        st.warning(f"Excel oluşturulamadı: {ex}")
+                        csv = df_live.to_csv(index=False).encode('utf-8-sig')
+                        st.session_state['last_excel_data'] = csv
+                        st.download_button("📥 CSV İndir", data=csv, file_name=f"FinalCheck_{donem_in}.csv", mime="text/csv")
+                        excel_data = csv
+                    
+                    # Save to session
+                    st.session_state['last_df_live'] = df_live
+                    st.session_state['last_donem'] = donem_in
+                    st.session_state['last_tpl_key'] = selected_tpl_key
+                    
+                    # AUTOMATIC MAIL TRIGGER
+                    if auto_mail and auto_to:
+                        with st.spinner("📧 Otomatik mail gönderiliyor..."):
+                            body = f"Merhaba,<br><br>{selected_tpl_key} sorgu sonuçları {donem_in} dönemi için ekte sunulmuştur.<br><br>İyi çalışmalar."
+                            subject = f"{selected_tpl_key} Sonuçları - {donem_in}"
+                            ok, msg = send_outlook_mail(auto_to, subject, body, excel_data, f"FinalCheck_{donem_in}.xlsx")
+                            if ok:
+                                st.success(f"✅ Sonuçlar {auto_to} adresine otomatik olarak gönderildi.")
+                            else:
+                                st.error(f"❌ Otomatik mail gönderilemedi: {msg}")
 
-    # --- MANUAL UPLOAD SECTION ---
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Manuel Veri Kaynağı</div>', unsafe_allow_html=True)
-    
-    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    st.markdown("#### Manuel Excel Yükle (Dışarıdan Alınan Dosyalar)")
-    uploaded_file = st.file_uploader("Veya SSMS çıktısını (.xlsx) buraya sürükleyin", type=["xlsx", "xls"])
-    
-    if uploaded_file:
-        try:
-            df_upload = pd.read_excel(uploaded_file)
-            st.success("Dosya başarıyla yüklendi!")
-            st.dataframe(df_upload.head(10), use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                except Exception as e:
+                    st.info("İpucu: ODBC Driver yanısıra VPN bağlantınızın açık olduğundan emin olun.")
+
+    with tab_schedule:
+        st.markdown("### 🕒 Otomatik Rapor Zamanlayıcı")
+        st.info("""
+🕒 **Otomatik Raporlama Rehberi**
+
+💡 **Nasıl Çalışır?** Buradan eklediğiniz raporlar, her ayın 1'inde otomatik olarak **bir önceki ayın** verisiyle (N-1) çekilir ve gönderilir.
+
+⚠️ **Önemli:** Tablo yenileme (refresh) saatlerinden (saat başı ve buçuklar) kaçınmak için gönderimi **09:15** veya **10:15** gibi ara saatlere kurmanız önerilir.
+""")
+        
+        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+        with st.form("schedule_form"):
+            s_tpl = st.selectbox("Zamanlanacak Rapor", options=list(templates.keys()))
+            s_mail = st.text_input("Alıcı E-Posta", placeholder="isminiz@kariyer.net")
+            submit = st.form_submit_button("✅ Görevi Zamanla")
             
-            if st.button("Veriyi Kaydet & Güncelle", type="primary"):
-                save_path = Path(__file__).resolve().parent / "fixed_queries_data.csv"
-                df_upload["Donem"] = donem_in
-                df_upload["UploadTarihi"] = pd.Timestamp.now()
-                
-                if save_path.exists():
-                    df_old = pd.read_csv(save_path)
-                    df_old = df_old[df_old["Donem"].astype(str) != str(donem_in)]
-                    df_final = pd.concat([df_old, df_upload], ignore_index=True)
+            if submit:
+                if not s_mail:
+                    st.error("Lütfen bir e-posta adresi girin.")
                 else:
-                    df_final = df_upload
-                df_final.to_csv(save_path, index=False, encoding="utf-8-sig")
-                st.success(f"{donem_in} dönemi için veriler başarıyla güncellendi.")
-        except Exception as e:
-            st.error(f"Hata: {e}")
-    st.markdown('</div>', unsafe_allow_html=True)
+                    ok, msg = save_schedule(s_tpl, s_mail)
+                    if ok: st.success(msg)
+                    else: st.warning(msg)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # List existing
+        path = Path(__file__).resolve().parent / "config" / "schedules.json"
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    schedules = json.load(f)
+            except: schedules = []
+                
+            if schedules:
+                st.markdown("<br>#### Aktif Zamanlamalar", unsafe_allow_html=True)
+                for i, s in enumerate(schedules):
+                    with st.expander(f"📌 {s['template_name']} ➔ {s['recipient']}"):
+                        c1, c2, c3 = st.columns([2, 2, 1])
+                        c1.write(f"**Son Çalışma:** {s.get('last_run', 'N/A')}")
+                        c2.write(f"**Durum:** {s.get('status', 'Bekliyor')}")
+                        if c3.button("🗑️ Sil", key=f"del_sch_{i}"):
+                            schedules.pop(i)
+                            with open(path, "w", encoding="utf-8") as f:
+                                json.dump(schedules, f, indent=4)
+                            st.rerun()
+
+        # LOG SECTION
+        log_path = Path(__file__).resolve().parent / "logs" / "scheduler.log"
+        if log_path.exists():
+            st.markdown("<br>#### 📜 Gönderim Günlüğü (Son İşlemler)", unsafe_allow_html=True)
+            try:
+                with open(log_path, "r", encoding="utf-8") as lf:
+                    log_lines = lf.readlines()
+                # Show last 10 lines
+                st.code("".join(log_lines[-15:]), language="text")
+            except:
+                st.info("Henüz bir işlem günlüğü oluşmadı.")
+
+
 
 def render_pbix_analyzer():
     st.markdown('<div class="section-title">Power BI Analiz Fabrikası (Batch Engine)</div>', unsafe_allow_html=True)
@@ -2540,67 +2381,6 @@ def render_pbix_analyzer():
         4. Sonuçları özet tabloda ve rapor kartlarında inceleyin.
         """)
 
-    with col_f1:
-        search_q = st.text_input("🔍 Rapor adı ara...", placeholder="Rapor adı yazın...")
-    with col_f2:
-        folders = sorted(df_raw["Klasör1"].dropna().unique().tolist()) if "Klasör1" in df_raw.columns else []
-        folder_filter = st.selectbox("Klasör", ["Tümü"] + folders)
-    with col_f3:
-        type_options = sorted(df_raw[col_map["tip"]].dropna().unique().tolist())
-        type_filter = st.selectbox("Tip", ["Tümü"] + type_options)
-
-    # Apply filters
-    filtered = df_raw.copy()
-    if search_q:
-        filtered = filtered[filtered[col_map["name"]].str.contains(search_q, case=False, na=False)]
-    if folder_filter != "Tümü" and "Klasör1" in filtered.columns:
-        filtered = filtered[filtered["Klasör1"] == folder_filter]
-    if type_filter != "Tümü":
-        filtered = filtered[filtered[col_map["tip"]] == type_filter]
-
-    st.markdown(f"**{len(filtered)}** rapor gösteriliyor")
-
-    # Build display dataframe with rename
-    rename_map = {
-        col_map["name"]: "Rapor Adı",
-        col_map["tip"]: "Tip",
-        "UsageScore": "Kullanım",
-        "URL": "Raportal Linki",
-    }
-    if "Klasör1" in filtered.columns:
-        rename_map["Klasör1"] = "Klasör"
-        display_cols = [col_map["name"], "Klasör1", col_map["tip"], "UsageScore", "URL"]
-    else:
-        display_cols = [col_map["name"], col_map["path"], col_map["tip"], "UsageScore", "URL"]
-
-    display_cols = [c for c in display_cols if c in filtered.columns]
-    display_df = filtered[display_cols].rename(columns=rename_map)
-    # Arrow serialization için list içeren kolonları stringe dönüştür
-    for col in display_df.columns:
-        if display_df[col].apply(lambda x: isinstance(x, list)).any():
-            display_df[col] = display_df[col].astype(str)
-
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        height=520,
-        column_config={
-            "Raportal Linki": st.column_config.LinkColumn("Raportal Linki", display_text="🔗 Aç"),
-            "Kullanım": st.column_config.NumberColumn("Kullanım", format="%d"),
-        },
-    )
-
-    # CSV download
-    csv_data = filtered[display_cols].rename(columns=rename_map).to_csv(
-        index=False, sep=";", encoding="utf-8-sig"
-    ).encode("utf-8-sig")
-    st.download_button(
-        "📥 Tüm Linkleri CSV Olarak İndir",
-        data=csv_data,
-        file_name="raportal_links.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
 
 
 def _run_agent_in_thread(url: str, username: str, password: str, domain: str, api_key: str, headless: bool = False, model_name: str = None, max_pages: int = 5) -> dict:
@@ -3055,115 +2835,165 @@ def render_about():
 
 
 def render_insights_hub():
-    st.markdown("""
-        <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 1.5rem; border-radius: 20px; color: white; margin-bottom: 2rem; box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.2);">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="background: rgba(255,255,255,0.2); padding: 8px; border-radius: 12px;">
-                    <span class="material-icons-outlined" style="font-size: 2.2rem; color: white; margin: 0;">insights</span>
-                </div>
-                <div>
-                    <h1 style="margin: 0; font-weight: 800; font-size: 2.2rem; letter-spacing: -0.02em;">Raportal Insights Hub</h1>
-                    <p style="margin: 0; opacity: 0.9; font-size: 1rem;">Analiz ve Rapor Yönetim Merkezi</p>
-                </div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    render_premium_header(
+        title_main="Raportal",
+        title_highlight="Insights Hub",
+        subtitle="Akıllı Rapor Analiz ve Yönetim Merkezi",
+        icon="hub",
+        icon_color="#38bdf8",
+        gradient_start="#1e1b4b",
+        gradient_end="#4c1d95",
+        highlight_gradient="linear-gradient(90deg, #d8b4fe 0%, #f472b6 100%)",
+        tags=[
+            ("insights", "Analiz", "#a78bfa"),
+            ("storage", "Katalog", "#38bdf8")
+        ]
+    )
 
-    # DUAL WORKFLOW TABS
-    tab_link, tab_list = st.tabs(["🔗 Link ile Analiz Et", "📂 Katalogdan Seç & Analiz Et"])
+    col_main, col_info = st.columns([2.5, 1])
 
-    with tab_link:
-        st.markdown("### 🚀 Hızlı URL Analizi")
-        st.caption("Herhangi bir Raportal rapor linkini buraya yapıştırarak yapay zeka analizini anında başlatabilirsiniz.")
-        
-        default_url = st.session_state.get('target_report_url', "")
-        report_url_input = st.text_input("Rapor Linki (URL)", placeholder="https://raportal.kariyer.net/home/...", value=default_url, key="hub_link_input")
-        
-        # Link settings (Simplified)
-        prompt_addon = st.text_input("Özel Analiz Notu", key="hub_addon_link")
-        
-        # Defaults for hidden settings
-        vis_headless = True
-        sheet_count = 3
+    with col_main:
+        # DUAL WORKFLOW TABS
+        tab_link, tab_list = st.tabs(["🔗 Link ile Analiz Et", "📂 Katalogdan Seç & Analiz Et"])
 
-        if st.button("🔍 Analizi Başlat", type="primary", use_container_width=True, key="btn_run_link"):
-            if not report_url_input or "raportal.kariyer.net" not in report_url_input:
-                st.error("Lütfen geçerli bir Raportal linki girin.")
+        with tab_link:
+            st.html(f"""
+<div class="premium-form-box">
+    <div style="font-weight: 800; color: #1e1b4b; font-size: 1.1rem; margin-bottom: 5px;">Hızlı URL Analizi</div>
+    <div style="color: #64748b; font-size: 0.85rem; margin-bottom: 20px;">Herhangi bir Raportal rapor linkini buraya yapıştırarak yapay zeka analizini anında başlatabilirsiniz.</div>
+</div>
+""")
+            
+            default_url = st.session_state.get('target_report_url', "")
+            report_url_input = st.text_input("Rapor Linki (URL)", placeholder="https://raportal.kariyer.net/home/...", value=default_url, key="hub_link_input")
+            
+            prompt_addon = st.text_area("Özel Analiz Notu (Opsiyonel)", placeholder="Örn: Sadece son 3 aylık trendi yorumla...", height=100, key="hub_addon_link")
+            
+            st.html("""
+<div style='margin-top: 15px; margin-bottom: 20px;'>
+    <div style='font-size: 0.85rem; font-weight: 700; color: #1e1b4b; margin-bottom: 10px;'>Analiz Türü</div>
+</div>
+""")
+            sel_cols = st.columns(4)
+            sel_cols[0].checkbox("✨ Genel Analiz", value=True, key="an_gen")
+            sel_cols[1].checkbox("📈 Trend", value=False, key="an_trend")
+            sel_cols[2].checkbox("⚠️ Anomali", value=False, key="an_ano")
+            sel_cols[3].checkbox("📝 Yönetici Özeti", value=False, key="an_exec")
+
+            if st.button("🚀 ANALİZİ BAŞLAT", type="primary", use_container_width=True, key="btn_run_link_final"):
+                if not report_url_input or "raportal.kariyer.net" not in report_url_input:
+                    st.error("Lütfen geçerli bir Raportal linki girin.")
+                else:
+                    _run_vision_logic(report_url_input, True, 3, prompt_addon)
+            
+            st.html("<div style='text-align: center; margin-top: 15px; color: #64748b; font-size: 0.8rem;'><span class='material-icons-outlined' style='font-size: 1rem; vertical-align: middle;'>security</span> Verileriniz güvenli şekilde işlenir.</div>")
+        with tab_list:
+            if "biportal_conn" not in st.session_state or not st.session_state.biportal_conn:
+                st.markdown('<div class="premium-form-box" style="text-align: center; border: 2px dashed #e2e8f0; background: #f8fafc;">', unsafe_allow_html=True)
+                st.markdown('<span class="material-icons-outlined" style="font-size: 4rem; color: #94a3b8; margin-bottom: 1rem;">storage</span>', unsafe_allow_html=True)
+                st.info("Katalog listesine erişebilmek için önce SQL sunucusuna bağlanmalısınız.")
+                st.markdown('</div>', unsafe_allow_html=True)
             else:
-                _run_vision_logic(report_url_input, vis_headless, sheet_count, prompt_addon)
+                if "prof_catalog_df" not in st.session_state:
+                    st.html("""
+<div class="premium-form-box" style="text-align: center; padding: 1.5rem 1rem;">
+    <span class="material-icons-outlined" style="font-size: 3.5rem; color: #8c28e8; margin-bottom: 0.5rem;">cloud_download</span>
+    <h3 style="margin-bottom: 10px;">Raportal Kataloğu Hazır</h3>
+    <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 20px;">SQL bağlantısı kuruldu. Binlerce rapor arasından seçim yapmak için listeyi şimdi çekebilirsin.</p>
+</div>
+""")
+                    if st.button("📋 RAPOR LİSTESİNİ GETİR", type="primary"):
+                        _load_catalog_data()
+                else:
+                    df = st.session_state.prof_catalog_df
+                    
+                    n_ssrs = len(df[df['Tip'] == 'SSRS'])
+                    n_pbi  = len(df[df['Tip'] == 'Power BI'])
+                    
+                    m1, m2, m3 = st.columns(3)
+                    
+                    def centered_metric(label, value, color="#8c28e8"):
+                        st.markdown(f"""
+                            <div style="text-align: center; padding: 20px; background: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0;">
+                                <div style="color: #64748b; font-size: 0.9rem; font-weight: 600; margin-bottom: 5px;">{label}</div>
+                                <div style="color: {color}; font-size: 2.2rem; font-weight: 800; line-height: 1;">{value}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-    with tab_list:
-        if "biportal_conn" not in st.session_state or not st.session_state.biportal_conn:
-            st.info("Katalog listesini taranabilmek için SQL bağlantısını kurun.")
-        else:
-            if "prof_catalog_df" not in st.session_state:
-                if st.button("📂 Rapor Listesini Getir", type="secondary"):
-                    _load_catalog_data()
-            else:
-                df = st.session_state.prof_catalog_df
-                
-                n_ssrs = len(df[df['Tip'] == 'SSRS'])
-                n_pbi  = len(df[df['Tip'] == 'Power BI'])
-                
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Toplam", len(df))
-                m2.metric("🗒️ SSRS Raporu", n_ssrs)
-                m3.metric("📊 Power BI", n_pbi)
+                    with m1: centered_metric("Toplam Rapor", len(df))
+                    with m2: centered_metric("🗒️ SSRS Raporu", n_ssrs, "#6366f1")
+                    with m3: centered_metric("📊 Power BI", n_pbi, "#f59e0b")
 
-                st.markdown("---")
-                # Filtreler (Arama + Klasör)
-                col_search, col_folder = st.columns([2, 1])
-                with col_search:
-                    search = st.text_input("🔍 Listede Rapor Ara", placeholder="Rapor adı, klasör...", key="hub_list_search")
-                with col_folder:
-                    folders = sorted(df["Klasör1"].dropna().unique().tolist())
-                    selected_folder = st.selectbox("📁 Klasöre Göre Filtrele", ["Tümü"] + folders, key="hub_folder_filter")
-                
-                # Filtreleme Mantığı
-                display_df = df.copy()
-                
-                # URL kolonunu ekle (Analiz butonu tıklanmadan önce URL'in hazır olması gerekir)
-                if 'URL' not in display_df.columns:
-                    def _make_url(row):
-                        base_url = "https://raportal.kariyer.net/home/"
-                        path = str(row['Path']).lstrip('/')
-                        encoded_path = "/".join([quote(p) for p in path.split('/')])
-                        return f"{base_url}{('report' if row['Tip']=='SSRS' else 'powerbi')}/{encoded_path}"
-                    display_df['URL'] = display_df.apply(_make_url, axis=1)
-                
-                if search:
-                    mask = display_df.apply(lambda r: r.astype(str).str.contains(search, case=False).any(), axis=1)
-                    display_df = display_df[mask]
-                
-                if selected_folder != "Tümü":
-                    display_df = display_df[display_df["Klasör1"] == selected_folder]
+                    st.markdown("---")
+                    
+                    # ROW 1: Search and Selection
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        search = st.text_input("🔍 Listede Rapor Ara", placeholder="Rapor adı, klasör...", key="hub_list_search")
+                    
+                    # --- FILTER LOGIC ---
+                    display_df = df.copy()
+                    if 'URL' not in display_df.columns:
+                        def _make_url(row):
+                            base_url = "https://raportal.kariyer.net/home/"
+                            path = str(row['Path']).lstrip('/')
+                            encoded_path = "/".join([quote(p) for p in path.split('/')])
+                            return f"{base_url}{('report' if row['Tip']=='SSRS' else 'powerbi')}/{encoded_path}"
+                        display_df['URL'] = display_df.apply(_make_url, axis=1)
+                    
+                    if search:
+                        mask = display_df.apply(lambda r: r.astype(str).str.contains(search, case=False).any(), axis=1)
+                        display_df = display_df[mask]
+                    # --------------------
 
-                # UI for picking from list
-                selection_col, action_col = st.columns([3, 1])
-                
-                selected_name = selection_col.selectbox(
-                    "Analiz edilecek raporu listeden seçin:", 
-                    options=display_df['Name'].unique(),
-                    index=0 if not display_df.empty else None,
-                    key="hub_report_pick"
-                )
+                    with col2:
+                        selected_name = st.selectbox(
+                            "Raporu Seçin:", 
+                            options=display_df['Name'].unique(),
+                            index=0 if not display_df.empty else None,
+                            key="hub_report_pick"
+                        )
 
-                if action_col.button("⚡ Seçili Raporu Analize Gönder", type="primary", use_container_width=True):
-                    if selected_name:
-                        row = display_df[display_df['Name'] == selected_name].iloc[0]
-                        # Create visual logic call
-                        _run_vision_logic(row['URL'], True, 3, "")
+                    # ROW 2: Filter and Action
+                    col3, col4 = st.columns([1, 1])
+                    with col3:
+                        sub_f1, sub_f2 = st.columns([0.85, 0.15])
+                        with sub_f1:
+                            folders = sorted(df["Klasör1"].dropna().unique().tolist())
+                            selected_folder = st.selectbox("📁 Klasöre Göre Filtrele", ["Tümü"] + folders, key="hub_folder_filter")
+                        with sub_f2:
+                            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                            def _clear_hub_filters():
+                                st.session_state.hub_list_search = ""
+                                st.session_state.hub_folder_filter = "Tümü"
+                                
+                            if st.button("🧹", help="Filtreleri Sıfırla", key="hub_clear_filters", on_click=_clear_hub_filters):
+                                pass # Callback handles it
+                        
+                        if selected_folder != "Tümü":
+                            display_df = display_df[display_df["Klasör1"] == selected_folder]
 
-                st.markdown("#### 📋 Tüm Katalog Listesi")
-                st.dataframe(
-                    display_df[['Name', 'Klasör1', 'Tip', 'Kullanim', 'URL', 'Yetki']], 
-                    use_container_width=True, 
-                    height=400,
-                    column_config={
-                        "URL": st.column_config.LinkColumn("Raportal Linki", display_text="🔗 Aç"),
-                        "Yetki": st.column_config.TextColumn("Yetkili Kullanıcılar", help="Bu rapora erişimi olan kullanıcıların listesi.")
-                    }
-                )
+                    with col4:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("⚡ Seçili Raporu Analize Gönder", type="primary", use_container_width=True):
+                            if selected_name:
+                                # Refetch the row based on potentially filtered data
+                                try:
+                                    row = display_df[display_df['Name'] == selected_name].iloc[0]
+                                    _run_vision_logic(row['URL'], True, 3, "")
+                                except:
+                                    st.error("Rapor bilgisi alınamadı.")
+
+                    st.markdown("#### 📋 Tüm Katalog Listesi")
+                    st.dataframe(
+                        display_df[['Name', 'Klasör1', 'Tip', 'Kullanim', 'URL', 'Yetki']], 
+                        use_container_width=True, 
+                        height=400,
+                        column_config={
+                            "URL": st.column_config.LinkColumn("Raportal Linki", display_text="🔗 Aç"),
+                            "Yetki": st.column_config.TextColumn("Yetkili Kullanıcılar", help="Bu rapora erişimi olan kullanıcıların listesi.", width="large")
+                        }
+                    )
 
 def _load_catalog_data():
     with st.spinner("biportal kataloğu taranıyor..."):
@@ -3234,9 +3064,10 @@ def _run_vision_logic(url, headless, sheets, addon):
     if not model_name and available_models: model_name = available_models[0]
     if not model_name: model_name = GEMINI_MODEL
 
-    with st.status("🔍 Profesyonel Veri Analizi Hazırlanıyor...", expanded=True) as status:
-        st.write("📂 Browser başlatılıyor ve sayfalar taranıyor...")
+    with st.status("🚀 Akıllı Analiz Süreci Başlatıldı", expanded=True) as status:
+        st.write("🌐 Browser motoru hazırlanıyor (Playwright)...")
         try:
+            # 1. Aşama: Veri Toplama
             outcome = _run_agent_in_thread(
                 url, 
                 st.session_state.sb_sql_user, 
@@ -3245,7 +3076,7 @@ def _run_vision_logic(url, headless, sheets, addon):
                 current_key,
                 headless=headless,
                 model_name=model_name,
-                max_pages=sheets # UI'daki slider değeri
+                max_pages=sheets
             )
             
             if not outcome.get("ok"):
@@ -3256,7 +3087,9 @@ def _run_vision_logic(url, headless, sheets, addon):
             dashboard_data = outcome.get("data")
             analysis = outcome.get("analysis")
             
-            status.update(label="📸 Veriler yakalandı, AI yorumluyor...", state="running")
+            # 2. Aşama: Görselleştirme ve Sunum
+            status.update(label="🤖 Veriler yakalandı, AI profesyonel yorumu üretiyor...", state="running")
+            st.write("📊 Rapor sayfaları analiz ediliyor ve sunum scripti hazırlanıyor...")
             
             # Archive
             if dashboard_data and dashboard_data.pages:
@@ -3271,9 +3104,9 @@ def _run_vision_logic(url, headless, sheets, addon):
 
             if analysis:
                 st.markdown("### 📝 AI Profesyonel Yorumu & Sunum Scripti")
-                st.markdown(f'<div style="background-color: white; padding: 20px; border-radius: 12px; border-left: 5px solid #f59e0b; color: #1f2937; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">{analysis}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="background-color: white; padding: 20px; border-radius: 12px; border-left: 5px solid #8c28e8; color: #1f2937; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">{analysis}</div>', unsafe_allow_html=True)
             
-            status.update(label="✅ Analiz Tamamlandı!", state="complete", expanded=False)
+            status.update(label="✅ Analiz Başarıyla Tamamlandı", state="complete", expanded=False)
         except Exception as e:
             st.error(f"Beklenmeyen hata: {e}")
             traceback.print_exc()
@@ -3284,7 +3117,9 @@ def render_about():
     st.write("Raportal Agent v2.5 - Kariyer.net için özel olarak geliştirilmiştir.")
 
 # --- MAIN PAGE ROUTING ---
-if st.session_state.active_page == "Dashboard":
+if st.session_state.active_page == "Anasayfa":
+    render_home()
+elif st.session_state.active_page == "Dashboard":
     render_dashboard()
 elif st.session_state.active_page == "Raportal Insights Hub":
     render_insights_hub()

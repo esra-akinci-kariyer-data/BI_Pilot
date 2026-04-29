@@ -75,5 +75,19 @@
     "prompt": "Kariyer.net Veri Uyumlu Aylık Churn Dashboardu (v6)",
     "summary": "Large/Medium/Small segmentleri yerine gerçek Kariyer Plus/Classic/Professional hiyerarşisi uygulandı.",
     "image_path": "assets/visionary_mockups/history/mockup_v6_final.png"
+  },
+  {
+    "timestamp": "2026-04-29 10:19:14",
+    "id": "20260429_101914",
+    "prompt": "Yüklenen dosyadaki metrikleri analiz ederek bu verilere uygun profesyonel bir dashboard tasarla.",
+    "summary": "Harika bir meydan okuma! Yüklenen genel Excel verisi talebini, Kariyer.net'in üst düzey raporlama standartları ve 'Real-World' verileriyle birleştirerek profesyonel bir Power BI dashboard tasarımı oluşturuyorum. Yüklenen dosyanın içeriği hakkında bilgi verilmediği için, Kariyer.net'in mevcut rapor referansları ve gerçek organizasyonel yapısından yola çıkarak verilerin **İKÇO Satış ve Portföy Yönetimi** odaklı olduğunu varsayıyorum.\n\n---\n\n### 1. İhtiyaç Özeti\n\n*   **Amaç:** Yüklenen Excel verisin...",
+    "image_path": "assets/visionary_mockups/history/mockup_20260429_101914.png"
+  },
+  {
+    "timestamp": "2026-04-29 14:02:49",
+    "id": "20260429_140249",
+    "prompt": "Aylık churn oranını veren dashboard istiyorum. İçeriğinde yenileme tipi ikço bölüm bilgileri de yer alsın.",
+    "summary": "Harika bir talep! Kariyer.net'in premium raporlama standartlarına uygun, aksiyon alınabilir bir \"Aylık Churn ve Yenileme Analizi Dashboardu\" taslağı oluşturmak için hazırım. Kullanıcının ihtiyacını analiz edelim ve detaylı bir tasarım önerisi sunalım:\n\n---\n\n### 1. İhtiyaç Özeti\n\n*   **Amaç:** Kariyer.net platformunda yer alan İKÇO'ların aylık churn oranlarını izlemek, bu churn'ün nedenlerini (yenileme tipleri) ve hangi bölümlerden kaynaklandığını anlamak.\n*   **Hedef Kullanıcı:** Satış ekipleri,...",
+    "image_path": "assets/visionary_mockups/history/mockup_20260429_140249.png"
   }
 ]
