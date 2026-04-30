@@ -1,6 +1,0 @@
-2026/04/22-15:25:05.524 4260 Reusing MANIFEST C:\Users\esra.akinci\OneDrive - Kariyer.net\Masaüstü\AI\raportal_agent_poc\.pw-raportal-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/04/22-15:25:05.544 4260 Recovering log #69
-2026/04/22-15:25:05.554 4260 Reusing old log C:\Users\esra.akinci\OneDrive - Kariyer.net\Masaüstü\AI\raportal_agent_poc\.pw-raportal-profile\Default\EdgeCoupons/coupons_data.db/000069.log 
-2026/04/22-15:25:05.799 62ec Level-0 table #73: started
-2026/04/22-15:25:05.810 62ec Level-0 table #73: 682224 bytes OK
-2026/04/22-15:25:05.815 62ec Delete type=0 #69
