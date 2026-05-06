@@ -38,7 +38,8 @@ class IsinOlsunQueryEngine:
 
     def _execute_query(self, sql):
         conn = self.get_connection()
-        if not conn: return pd.DataFrame()
+        if not conn:
+            raise ConnectionError("SVM-DWH01 sunucusuna bağlanılamadı. Lütfen VPN bağlantınızı veya ağ yetkilerinizi kontrol edin.")
         try:
             return pd.read_sql(sql, conn)
         finally:
