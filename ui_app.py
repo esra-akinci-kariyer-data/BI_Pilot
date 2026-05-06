@@ -13,6 +13,7 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
+from konnekt_client import KonnektAPIClient
 
 from pathlib import Path
 
@@ -25,6 +26,10 @@ if VENV_LIB.exists() and str(VENV_LIB) not in sys.path:
 import time
 import threading
 import smtplib
+try:
+    import win32com.client as win32
+except ImportError:
+    win32 = None
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -180,6 +185,16 @@ html, body, [class*="css"] {
 /* --- Sidebar Modernization --- */
 section[data-testid="stSidebar"] {
     background-color: var(--sidebar-bg) !important;
+    min-width: 320px !important;
+    max-width: 320px !important;
+}
+
+section[data-testid="stSidebar"] .stButton button {
+    font-size: 0.85rem !important;
+    padding: 0.5rem 1rem !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    white-space: nowrap !important;
 }
 
 .sidebar-brand {
@@ -395,6 +410,43 @@ div[data-testid="stCheckbox"] {
     padding-top: 2rem !important;
 }
 
+/* --- Streamlit Tabs Modernization --- */
+div[data-testid="stTabs"] {
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+}
+
+div[data-testid="stTabs"] button {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+    padding: 12px 24px !important;
+    border-radius: 12px 12px 0 0 !important;
+    transition: all 0.3s ease !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+div[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #8c28e8 !important;
+    background: white !important;
+    box-shadow: 0 -4px 10px rgba(140, 40, 232, 0.05) !important;
+}
+
+div[data-testid="stTabs"] div[data-baseweb="tab-highlight"] {
+    background-color: #8c28e8 !important;
+    height: 3px !important;
+}
+
+/* --- Streamlit Container Styling --- */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: white !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 24px !important;
+    padding: 1.5rem !important;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.02) !important;
+}
+
 </style>
 """
 
@@ -599,6 +651,14 @@ def check_authentication():
         st.session_state.api_key = None
     if "active_page" not in st.session_state:
         st.session_state.active_page = "Anasayfa"
+    
+    # Pre-fill credentials from user for testing
+    if "sb_sql_user" not in st.session_state:
+        st.session_state.sb_sql_user = "esra.akinci"
+    if "sb_sql_pass" not in st.session_state:
+        st.session_state.sb_sql_pass = "Ea93934430."
+    if "sb_sql_domain" not in st.session_state:
+        st.session_state.sb_sql_domain = "KARIYER"
 
     with st.sidebar:
         st.markdown(
@@ -616,7 +676,9 @@ def check_authentication():
             {"name": "Raportal Insights Hub"},
             {"name": "Dashboard"},
             {"name": "Fix Sorgular"},
+            {"name": "İşin Olsun Product Features"},
             {"name": "PBIX Analizi"},
+            {"name": "Konnekt DNA (Beta)"},
             {"name": "Hakkında"},
         ]
 
@@ -631,7 +693,9 @@ def check_authentication():
                 "Raportal Insights Hub": "🧠",
                 "Dashboard": "📊",
                 "Fix Sorgular": "⚡",
+                "İşin Olsun Product Features": "🚀",
                 "PBIX Analizi": "📈",
+                "Konnekt DNA (Beta)": "🧬",
                 "Hakkında": "ℹ️"
             }
             icon = icon_map.get(p["name"], "🔵")
@@ -1607,7 +1671,7 @@ def render_home():
         highlight_gradient="linear-gradient(90deg, #d8b4fe 0%, #f472b6 100%)",
         tags=[
             ("auto_awesome", "AI Destekli", "#d8b4fe"),
-            ("database", "Veri Odaklı", "#818cf8")
+            ("insights", "Veri Odaklı", "#818cf8")
         ]
     )
 
@@ -1647,17 +1711,17 @@ def render_home():
             st.rerun()
 
     with col3:
-        st.markdown(f"""
-            <div class="feature-card">
-                <div class="feature-icon-box" style="background: #f0fdf4; color: #16a34a;">
-                    <span class="material-icons-outlined">search</span>
-                </div>
-                <h3 style="margin: 0; color: #1e1b4b; font-size: 1.3rem; font-weight: 800;">Fix Sorgular</h3>
-                <p style="margin: 15px 0; color: #64748b; font-size: 0.9rem; line-height: 1.6; flex-grow: 1;">
-                    SQL süreçlerini otomatikleştirin, hataları çöz ve sonuçları anında e-posta ile al.
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.html(f"""
+<div class="feature-card">
+    <div class="feature-icon-box" style="background: #f0fdf4; color: #16a34a;">
+        <span class="material-icons-outlined">search</span>
+    </div>
+    <h3 style="margin: 0; color: #1e1b4b; font-size: 1.3rem; font-weight: 800;">Fix Sorgular</h3>
+    <p style="margin: 15px 0; color: #64748b; font-size: 0.9rem; line-height: 1.6; flex-grow: 1;">
+        SQL süreçlerini otomatikleştirin, hataları çöz ve sonuçları anında e-posta ile al.
+    </p>
+</div>
+""")
         if st.button("Fix Sorgulara Git →", key="go_fix", use_container_width=True):
             st.session_state.active_page = "Fix Sorgular"
             st.rerun()
@@ -1684,9 +1748,9 @@ def render_premium_header(title_main, title_highlight, subtitle, icon, icon_colo
     if tags:
         for t_icon, t_text, t_color in tags:
             tag_html += f"""
-            <div style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px;">
-                <span class="material-icons-outlined" style="color: {t_color}; font-size: 1.1rem;">{t_icon}</span>
-                <span style="font-size: 0.8rem; font-weight: 600; color: white;">{t_text}</span>
+            <div style="background: rgba(255,255,255,0.05); padding: 8px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); display: flex !important; align-items: center !important; justify-content: flex-start !important; flex: 0 0 220px; width: 220px; white-space: nowrap; box-sizing: border-box;">
+                <span class="material-icons-outlined" style="color: {t_color}; font-size: 1.1rem; margin-right: 12px; display: block;">{t_icon}</span>
+                <span style="font-size: 0.8rem; font-weight: 600; color: white; display: block;">{t_text}</span>
             </div>
             """
 
@@ -1757,36 +1821,34 @@ def render_dashboard():
 </div>
 """)
 
-        st.markdown('<div class="premium-form-box">', unsafe_allow_html=True)
-        col_f1, col_f2 = st.columns([1, 1])
-        with col_f1:
-            st.html("""
-<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
-    <div style="background: #eef2ff; color: #6366f1; padding: 6px; border-radius: 8px;">
-        <span class="material-icons-outlined" style="font-size: 1.2rem;">bolt</span>
+        with st.container(border=True):
+            col_f1, col_f2 = st.columns([1, 1])
+            with col_f1:
+                st.html("""
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+        <div style="background: #eef2ff; color: #6366f1; padding: 6px; border-radius: 8px;">
+            <span class="material-icons-outlined" style="font-size: 1.2rem;">bolt</span>
+        </div>
+        <div>
+            <div style="font-weight: 800; color: #1e1b4b; font-size: 1rem;">Hızlı Tasarım Tanımı</div>
+            <div style="font-size: 0.75rem; color: #64748b;">Rapor veya dashboard ihtiyacınızı aşağıda açıklayın.</div>
+        </div>
     </div>
-    <div>
-        <div style="font-weight: 800; color: #1e1b4b; font-size: 1rem;">Hızlı Tasarım Tanımı</div>
-        <div style="font-size: 0.75rem; color: #64748b;">Rapor veya dashboard ihtiyacınızı aşağıda açıklayın.</div>
-    </div>
-</div>
-""")
-        with col_f2:
-            v_report_type = st.selectbox("Hedef Format", options=["Power BI", "SSRS", "Excel", "Otomatik"], key="v_format_pick")
+    """)
+            with col_f2:
+                v_report_type = st.selectbox("Hedef Format", options=["Power BI", "SSRS", "Excel", "Otomatik"], key="v_format_pick")
 
-        v_prompt = st.text_area("Prompt", placeholder="Örn: Satış performansını izleyen bir dashboard...", height=120, label_visibility="collapsed", key="v_prompt_final")
-        
-        # Options Toggles
-        st.markdown("<div style='margin-top: 15px; margin-bottom: 20px;'>", unsafe_allow_html=True)
-        t_col1, t_col2, t_col3, t_col4 = st.columns(4)
-        with t_col1: st.checkbox("📝 Yönetici Özeti", value=True, key="opt_exec")
-        with t_col2: st.checkbox("📈 Trend Vurgusu", value=False, key="opt_trend")
-        with t_col3: st.checkbox("📊 Karşılaştırmalı KPI", value=True, key="opt_comp")
-        with t_col4: st.button("+ Diğer Özellik Ekle", use_container_width=True, key="opt_add")
-        st.markdown("</div>", unsafe_allow_html=True)
+            v_prompt = st.text_area("Prompt", placeholder="Örn: Satış performansını izleyen bir dashboard...", height=120, label_visibility="collapsed", key="v_prompt_final")
+            
+            # Options Toggles
+            t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+            with t_col1: st.checkbox("📝 Yönetici Özeti", value=True, key="opt_exec")
+            with t_col2: st.checkbox("📈 Trend Vurgusu", value=False, key="opt_trend")
+            with t_col3: st.checkbox("📊 Karşılaştırmalı KPI", value=True, key="opt_comp")
+            with t_col4: st.button("+ Diğer Özellik Ekle", use_container_width=True, key="opt_add")
+            
+            design_clicked = st.button("✨ TASARIMI BAŞLAT", use_container_width=True, type="primary", key="btn_start_design_final")
 
-        design_clicked = st.button("✨ TASARIMI BAŞLAT", use_container_width=True, type="primary", key="btn_start_design_final")
-        st.markdown('</div>', unsafe_allow_html=True)
 
         if design_clicked and v_prompt:
             # 1. Clear ALL relevant state
@@ -2332,56 +2394,206 @@ def render_pbix_analyzer():
                     m3.metric("Ölçü", len(metadata.get("measures", [])))
                     m4.metric("Sayfa", len(metadata.get("pages", [])))
 
-                    if metadata.get("forensic_matches"):
-                        st.info("🔍 Adli Tarama: Binary bloklardan veri parçacıkları kurtarıldı.")
+def run_konnekt_dna_workflow(item_id, report_name):
+    """Konnekt Hub üzerinden raporu bulur veya indirip yükler."""
+    client = KonnektAPIClient()
+    
+    # 1. Önce Konnekt Hub'da ara (Sync edilmişse oradadır)
+    with st.spinner(f"Konnekt Hub'da '{report_name}' aranıyor..."):
+        ok, match = client.search_report_in_konnekt(report_name)
+        if ok and match:
+            ok_meta, meta = client.get_report_metadata(match['id'])
+            if ok_meta:
+                st.session_state.konnekt_result = meta
+                st.session_state.active_page = "Konnekt DNA (Beta)"
+                st.rerun()
+                return
 
-                    # DNA Tabs for this specific report
-                    t_pages, t_tables, t_rels, t_measures, t_m, t_src = st.tabs([
-                        "📄 Sayfalar", "📊 Tablalar", "🔗 İlişkiler", "📐 DAX Ölçüleri", "⚡ Power Query", "🔌 Kaynaklar"
-                    ])
-                    
-                    with t_pages:
-                        if metadata.get("pages"):
-                            for p in metadata["pages"]: st.write(f"- {p['name']}")
-                    
-                    with t_tables:
-                        if metadata.get("tables"):
-                            for t in metadata["tables"]:
-                                with st.expander(f"📁 {t['name']}"):
-                                    st.write(", ".join(t['columns']))
-                                    if t.get('partitions'):
-                                        st.code(t['partitions'][0]['query'], language="powerquery")
+    # 2. Eğer yoksa, Raportal'dan PATH tabanlı indir (ID yerine Path daha sağlamdır)
+    username = st.session_state.get("sb_sql_user") or st.session_state.get("pbit_user")
+    password = st.session_state.get("sb_sql_pass") or st.session_state.get("pbit_pass")
+    
+    if not username or not password:
+        st.warning(f"'{report_name}' Hub'da taranmamış. İndirmek için şifreniz gerekiyor.")
+        return
 
-                    with t_rels:
-                        if metadata.get("relationships"):
-                            st.table(pd.DataFrame(metadata["relationships"]))
+    # Katalogdan bu raporun tam yolunu (Path) bulalım
+    try:
+        df_all, _ = load_metadata()
+        row = df_all[df_all['Name'] == report_name].iloc[0]
+        full_path = row['Path'] # Örn: /Satış/Portföy Performans/Aylık Churn
+    except:
+        full_path = None
 
-                    with t_measures:
-                        if metadata.get("measures"):
-                            st.dataframe(pd.DataFrame(metadata["measures"]), use_container_width=True)
-                        if metadata.get("forensic_matches"):
-                            with st.expander("Ham Binary DAX"):
-                                for match in metadata["forensic_matches"]: st.code(match)
+    session = create_pbirs_session(username, password)
+    session.verify = False
+    
+    with st.spinner(f"'{report_name}' Raportal'dan çekiliyor..."):
+        # URL'de Path kullanımı için tırnak ve encode gerekir
+        import urllib.parse
+        encoded_path = urllib.parse.quote(f"'{full_path}'")
+        
+        PBIRS_BASES = ["https://raportal.kariyer.net/powerbi/api/v2.0", "https://raportal.kariyer.net/reports/api/v2.0"]
+        pbix_bytes = None
+        
+        for base_url in PBIRS_BASES:
+            # Hem ID hem Path ile deneme
+            urls_to_try = [
+                f"{base_url}/PowerBIReports(Path={encoded_path})/Content",
+                f"{base_url}/CatalogItems(Path={encoded_path})/Content",
+                f"{base_url}/PowerBIReports({item_id})/Content" # Son çare ID
+            ]
+            
+            for url in urls_to_try:
+                try:
+                    resp = session.get(url, timeout=60)
+                    if resp.status_code == 200:
+                        pbix_bytes = resp.content
+                        break
+                except: continue
+            if pbix_bytes: break
 
-                    with t_m:
-                        if metadata.get("m_queries"):
-                            for q_name, q_code in metadata["m_queries"].items():
-                                with st.expander(f"⚡ {q_name}"): st.code(q_code, language="powerquery")
-
-                    with t_src:
-                        if metadata.get("data_sources"):
-                            for ds in metadata["data_sources"]: st.code(ds)
+    if pbix_bytes:
+        with st.spinner("Konnekt API'ye aktarılıyor..."):
+            ok, result = client.upload_pbix(pbix_bytes, f"{report_name}.pbix")
+            if ok:
+                st.session_state.konnekt_result = result
+                st.session_state.active_page = "Konnekt DNA (Beta)"
+                st.rerun()
+            else: st.error(f"Konnekt Hatası: {result}")
     else:
-        # Instructions
-        st.markdown("""
-        ### Fabrika Nasıl Çalışır?
-        1. Listeye istediğiniz kadar `.pbix` dosyası ekleyin.
-        2. **'Tümünü Analiz Et'** butonuyla süreci başlatın.
-        3. Sistem her dosyayı PBIT'e çevirip DNA analizini yapar.
-        4. Sonuçları özet tabloda ve rapor kartlarında inceleyin.
-        """)
+        st.error(f"❌ **Raportal Erişilemedi:** '{report_name}' bulunamadı.")
+        st.info("💡 **Öneri:** Konnekt Hub sayfasından 'Full Scan' başlatarak tüm arşivi otomatik taratabilirsiniz.")
 
+def render_konnekt_dna():
+    render_premium_header(
+        title_main="Konnekt",
+        title_highlight="DNA Analizi",
+        subtitle="Power BI Raporlarının Genetik Haritası (DAX, Dataset, Lineage)",
+        icon="🧬",
+        icon_color="#ec4899",
+        gradient_start="#1e1b4b",
+        gradient_end="#4d1d95",
+        highlight_gradient="linear-gradient(90deg, #f472b6 0%, #ec4899 100%)",
+        tags=[
+            ("architecture", "Yapısal Analiz", "#f472b6"),
+            ("query_stats", "DAX & SQL", "#ec4899")
+        ]
+    )
 
+    if st.button("⬅️ Kataloğa Geri Dön", use_container_width=True):
+        st.session_state.active_page = "Raportal Insights Hub"
+        st.rerun()
+
+    tab1, tab2, tab3 = st.tabs(["🧬 DNA Sonuçları", "📤 Manuel Yükle", "⚙️ Konnekt Hub Yönetimi"])
+
+    client = KonnektAPIClient()
+
+    with tab1:
+        if st.session_state.get("konnekt_result"):
+            res = st.session_state.konnekt_result
+            
+            # Üst Özet
+            c1, c2, c3, c4 = st.columns(4)
+            tables = res.get('tables', [])
+            measures = res.get('measures', [])
+            rels = res.get('relationships', []) or res.get('lineage', {}).get('relationships', [])
+            srcs = res.get('datasources', []) or res.get('lineage', {}).get('dataSources', [])
+
+            c1.metric("Tablo Sayısı", len(tables))
+            c2.metric("DAX Ölçüsü", len(measures))
+            c3.metric("İlişkiler", len(rels))
+            c4.metric("Veri Kaynakları", len(srcs))
+
+            t_tables, t_measures, t_rels, t_lineage = st.tabs([
+                "📊 Tablolar", "📐 DAX Ölçüleri", "🔗 İlişkiler", "🔌 Veri Kaynakları"
+            ])
+
+            with t_tables:
+                if tables:
+                    for table in tables:
+                        with st.expander(f"📁 {table.get('name', 'Adsız Tablo')}"):
+                            if 'columns' in table:
+                                st.write(", ".join([c.get('name', c) if isinstance(c, dict) else c for c in table['columns']]))
+                            if 'partitions' in table:
+                                for p in table['partitions']:
+                                    if p.get('query'): st.code(p['query'], language="powerquery")
+                else:
+                    st.info("Tablo bilgisi bulunamadı.")
+
+            with t_measures:
+                if measures:
+                    df_m = pd.DataFrame(measures)
+                    st.dataframe(df_m, use_container_width=True)
+                else:
+                    st.info("DAX ölçüsü bulunamadı.")
+
+            with t_rels:
+                if rels:
+                    st.table(pd.DataFrame(rels))
+                else:
+                    st.info("İlişki bilgisi bulunamadı.")
+
+            with t_lineage:
+                if srcs:
+                    for ds in srcs:
+                        st.markdown(f"**Tip:** `{ds.get('type')}`")
+                        st.code(ds.get('connection_string') or ds.get('query') or ds.get('connectionString') or "Detay yok")
+                else:
+                    st.info("Kaynak bilgisi bulunamadı.")
+            
+            if st.button("🗑️ Analizi Temizle"):
+                del st.session_state.konnekt_result
+                st.rerun()
+        else:
+            st.info("Henüz bir analiz sonucu yok. Lütfen katalogdan bir rapor seçin veya manuel yükleme yapın.")
+
+    with tab2:
+        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+        uploaded_file = st.file_uploader("Analiz edilecek PBIX dosyasını seçin", type=["pbix", "pbit"], key="konnekt_manual_up")
+        if uploaded_file:
+            if st.button("🚀 Manuel Analizi Başlat", type="primary"):
+                with st.spinner("Konnekt API DNA analizi yapılıyor..."):
+                    ok, result = client.upload_pbix(uploaded_file.getvalue(), uploaded_file.name)
+                    if ok:
+                        st.session_state.konnekt_result = result
+                        st.success("Analiz tamamlandı!")
+                        st.rerun()
+                    else:
+                        st.error(f"Hata: {result}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with tab3:
+        st.markdown("### ⚙️ Konnekt Hub & Raportal Senkronizasyonu")
+        st.write("Bu panel, Konnekt API'nin Raportal sunucunuza doğrudan bağlanmasını ve tüm raporları otomatik taramasını sağlar.")
+        
+        # Mevcut bağlantıları listele
+        ok, conns = client.list_connections()
+        if ok and conns:
+            st.markdown("#### Mevcut Bağlantılar")
+            for c in conns:
+                col1, col2 = st.columns([3, 1])
+                col1.write(f"🔗 **{c['name']}** ({c['server_url']})")
+                if col2.button("🔄 Tara (Scan)", key=f"scan_{c['id']}"):
+                    ok_s, res_s = client.start_connection_scan(c['id'])
+                    if ok_s: st.success("Tarama başlatıldı! Birkaç dakika sonra raporlar Konnekt Hub'da görünecektir.")
+                    else: st.error(res_s)
+        else:
+            st.info("Henüz kayıtlı bir Raportal bağlantısı yok.")
+
+        with st.expander("➕ Yeni Raportal Bağlantısı Ekle"):
+            c_name = st.text_input("Bağlantı Adı", value="Kariyer Raportal")
+            c_url = st.text_input("Raportal URL", value="https://raportal.kariyer.net/powerbi")
+            c_user = st.text_input("User", value=st.session_state.get("sb_sql_user", "esra.akinci"))
+            c_pass = st.text_input("Pass", value=st.session_state.get("sb_sql_pass", ""), type="password")
+            
+            if st.button("🚀 Konnekt'e Kaydet ve Bağlan"):
+                ok_c, res_c = client.create_pbirs_connection(c_name, c_url, c_user, c_pass)
+                if ok_c:
+                    st.success("Bağlantı başarıyla oluşturuldu! Şimdi 'Tara' butonuna basarak tüm raporları Konnekt Hub'a alabilirsiniz.")
+                    st.rerun()
+                else:
+                    st.error(res_c)
 
 def _run_agent_in_thread(url: str, username: str, password: str, domain: str, api_key: str, headless: bool = False, model_name: str = None, max_pages: int = 5) -> dict:
     """Playwright async kodunu ayrı thread'de çalıştır ve yapılandırılmış sonuç döndür."""
@@ -2854,7 +3066,7 @@ def render_insights_hub():
 
     with col_main:
         # DUAL WORKFLOW TABS
-        tab_link, tab_list = st.tabs(["🔗 Link ile Analiz Et", "📂 Katalogdan Seç & Analiz Et"])
+        tab_link, tab_list = st.tabs(["✨ LİNK İLE ANALİZ ET", "📚 KATALOGDAN SEÇ & ANALİZ"])
 
         with tab_link:
             st.html(f"""
@@ -2983,6 +3195,17 @@ def render_insights_hub():
                                     _run_vision_logic(row['URL'], True, 3, "")
                                 except:
                                     st.error("Rapor bilgisi alınamadı.")
+                        
+                        if st.button("🧬 Konnekt DNA Analizi (Derin)", use_container_width=True):
+                            if selected_name:
+                                try:
+                                    row = display_df[display_df['Name'] == selected_name].iloc[0]
+                                    if row['Tip'] != 'Power BI':
+                                        st.warning("Bu özellik şu an sadece Power BI raporları için geçerlidir.")
+                                    else:
+                                        run_konnekt_dna_workflow(row['ItemID'], row['Name'])
+                                except Exception as e:
+                                    st.error(f"Hata: {e}")
 
                     st.markdown("#### 📋 Tüm Katalog Listesi")
                     st.dataframe(
@@ -3111,6 +3334,103 @@ def _run_vision_logic(url, headless, sheets, addon):
             st.error(f"Beklenmeyen hata: {e}")
             traceback.print_exc()
 
+def send_outlook_mail(to, subject, body, attachment_path=None):
+    """Sends an email using the local Outlook application."""
+    if not win32:
+        return False, "win32com kütüphanesi yüklü değil. Lütfen 'pip install pywin32' komutunu çalıştırın."
+    try:
+        outlook = win32.Dispatch('outlook.application')
+        mail = outlook.CreateItem(0)
+        mail.To = to
+        mail.Subject = subject
+        mail.HTMLBody = body
+        if attachment_path and os.path.exists(attachment_path):
+            mail.Attachments.Add(attachment_path)
+        mail.Send()
+        return True, "E-posta başarıyla gönderildi."
+    except Exception as e:
+        return False, f"Outlook hatası: {str(e)}"
+
+
+def render_isin_olsun_otomasyonu():
+    st.markdown('<div class="hero-box"><h1 class="hero-title">🚀 İşin Olsun Aylık Otomasyon</h1><p class="hero-desc">DWH üzerinden aylık rakamları çeker ve Excel raporunu otomatik doldurur.</p></div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("### 📊 Rapor Parametreleri")
+        default_path = r"C:\Users\esra.akinci\Downloads\RD-17530-Kasım Product Features.xlsx"
+        excel_path = st.text_input("Excel Dosya Yolu (OneDrive/Yerel)", value=st.session_state.get("io_excel_path", default_path), placeholder="C:\\Users\\...\\Isin_Olsun_Product.xlsx")
+        if excel_path:
+            st.session_state.io_excel_path = excel_path
+            
+        selected_month = st.date_input("Hedef Ay Seçimi", value=datetime.now().replace(day=1) - timedelta(days=1))
+        
+        st.info("💡 **Not:** Seçtiğiniz ayın son günü baz alınarak sorgular çalıştırılacaktır. Yeni bir sütun (Örn: Nisan '26) otomatik olarak eklenecektir.")
+        
+        if st.button("⚡ Sorguları Çalıştır ve Excel'i Doldur", type="primary", use_container_width=True):
+            if not excel_path:
+                st.error("Lütfen Excel dosya yolunu giriniz.")
+            elif not os.path.exists(excel_path):
+                st.error(f"Dosya bulunamadı: {excel_path}")
+            else:
+                try:
+                    from isin_olsun_filler import fill_isin_olsun_excel
+                    with st.spinner("Sorgular SVM-DWH01 üzerinde çalıştırılıyor ve Excel güncelleniyor..."):
+                        fill_isin_olsun_excel(excel_path, target_month=selected_month.strftime("%Y-%m-%d"))
+                    st.success("✅ Excel başarıyla güncellendi!")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Hata oluştu: {e}")
+                    st.exception(e)
+
+        # --- EMAIL SENDING SECTION ---
+        st.markdown("---")
+        st.markdown("### 📧 Raporu Mail Olarak Gönder")
+        
+        recipient_options = {
+            "Esra Akıncı (Kendime - Test)": "esra.akinci@kariyer.net",
+            "Birsen Bircan (Asıl Alıcı)": "birsen.bircan@kariyer.net"
+        }
+        selected_label = st.radio("Alıcı Seçin", options=list(recipient_options.keys()), horizontal=True)
+        target_email = recipient_options[selected_label]
+        
+        if st.button("📤 Seçili Kişiye Mail At", use_container_width=True):
+            if not excel_path or not os.path.exists(excel_path):
+                st.warning("Önce raporu oluşturmalı veya geçerli bir dosya yolu girmelisiniz.")
+            else:
+                tr_months = {
+                    1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                    7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+                }
+                month_name_tr = tr_months.get(selected_month.month, "")
+                subject = f"IO- İşin Olsun Product Features - {month_name_tr}"
+                body = f"""
+                <html>
+                <body>
+                    <p>Merhaba,</p>
+                    <p><b>{month_name_tr} {selected_month.year}</b> dönemi İşin Olsun Product Features raporu ekte bilgilerinize sunulmuştur.</p>
+                    <p>İyi çalışmalar dilerim.</p>
+                </body>
+                </html>
+                """
+                with st.spinner(f"Mail {target_email} adresine iletiliyor..."):
+                    ok, msg = send_outlook_mail(target_email, subject, body, excel_path)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.toast(f"E-posta {target_email} adresine gönderildi!", icon="📧")
+                    else:
+                        st.error(f"❌ {msg}")
+    
+    with col2:
+        st.markdown('<div class="info-sidebar-box" style="background-color: #f0f4f8; padding: 20px; border-radius: 15px; border-left: 5px solid #8c28e8;">', unsafe_allow_html=True)
+        st.markdown("#### 📖 Nasıl Kullanılır?")
+        st.markdown("""
+        1. **Dosya Yolu:** SharePoint'teki dosyanın bilgisayarınızdaki OneDrive konumunu kopyalayıp yapıştırın.
+        2. **Ay Seç:** Rakamlarını çekmek istediğiniz ayı seçin.
+        3. **Çalıştır:** Butona bastığınızda sistem Aday ve İşveren sayfalarına yeni bir sütun ekleyip rakamları otomatik doldurur.
+        """)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 def render_about():
     st.markdown('<div class="section-title">Hakkında</div>', unsafe_allow_html=True)
@@ -3127,7 +3447,11 @@ elif st.session_state.active_page == "PBIT İndir":
     render_pbit_downloader()
 elif st.session_state.active_page == "Fix Sorgular":
     render_fix_sorgular()
+elif st.session_state.active_page == "İşin Olsun Product Features":
+    render_isin_olsun_otomasyonu()
 elif st.session_state.active_page == "PBIX Analizi":
     render_pbix_analyzer()
+elif st.session_state.active_page == "Konnekt DNA (Beta)":
+    render_konnekt_dna()
 else:
     render_about()

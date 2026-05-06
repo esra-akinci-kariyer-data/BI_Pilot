@@ -1,0 +1,1 @@
+**Hata:** Gemini API key girilmedi. Soldan bağlanın.

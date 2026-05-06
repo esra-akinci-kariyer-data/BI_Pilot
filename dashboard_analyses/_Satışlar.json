@@ -1,0 +1,43 @@
+{
+  "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/_Sat%C4%B1%C5%9Flar",
+  "report_name": "_Satışlar",
+  "pages": [
+    {
+      "tab_name": "Fatura Tarihine Göre Satışlar",
+      "title": "_Satışlar - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/_Sat%C4%B1%C5%9Flar",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_00_Fatura_Tarihine_Göre_Satışlar_1777533194.png",
+      "visible_text": "Skip to content | ... | Home | Satış | _Satışlar | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Sözleşme Tarihine Göre Satışlar",
+      "title": "_Satışlar - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/_Sat%C4%B1%C5%9Flar",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_01_Sözleşme_Tarihine_Göre_Satışlar_1777533194.png",
+      "visible_text": "Skip to content | ... | Home | Satış | _Satışlar | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Ürünler",
+      "title": "_Satışlar - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Sat%C4%B1%C5%9F/_Sat%C4%B1%C5%9Flar",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_02_Ürünler_1777533194.png",
+      "visible_text": "Skip to content | ... | Home | Satış | _Satışlar | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    }
+  ],
+  "error": null
+}
