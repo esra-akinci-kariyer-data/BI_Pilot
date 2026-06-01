@@ -603,7 +603,7 @@ def check_authentication():
             {"name": "Rapor İçerik Copilot", "icon": "manage_search"},
             {"name": "PBIT İndir", "icon": "download"},
             {"name": "Fix Sorgular", "icon": "history_edu"},
-            {"name": "İşin Olsun Otomasyon", "icon": "build"},
+            {"name": "İşin Olsun Product Features", "icon": "rocket"},
             {"name": "PBIX Analizi", "icon": "analytics"},
             {"name": "Metadata Listesi", "icon": "reorder"},
             {"name": "Hakkında", "icon": "info"},
@@ -2695,7 +2695,7 @@ elif st.session_state.active_page == "PBIT İndir":
     render_pbit_downloader()
 elif st.session_state.active_page == "Fix Sorgular":
     render_fix_sorgular()
-elif st.session_state.active_page == "İşin Olsun Otomasyon":
+elif st.session_state.active_page == "İşin Olsun Product Features":
     render_isin_olsun_otomasyonu()
 elif st.session_state.active_page == "PBIX Analizi":
     render_pbix_analyzer()
