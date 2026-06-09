@@ -1,0 +1,43 @@
+{
+  "url": "https://raportal.kariyer.net/home/powerbi/Pazarlama%20ve%20%C3%9Cr%C3%BCn%20Y%C3%B6netimi/%C4%B0%C5%9Fin%20Olsun/Octupus%20-%20%C4%B0%C5%9Fin%20Olsun",
+  "report_name": "Octupus - İşin Olsun",
+  "pages": [
+    {
+      "tab_name": "Octopus",
+      "title": "Octupus - İşin Olsun - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Pazarlama%20ve%20%C3%9Cr%C3%BCn%20Y%C3%B6netimi/%C4%B0%C5%9Fin%20Olsun/Octupus%20-%20%C4%B0%C5%9Fin%20Olsun",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_00_Octopus_1780573330.png",
+      "visible_text": "Skip to content | ... | Home | Pazarlama ve Ürün Yönetimi | İşin Olsun | Octupus - İşin Olsun | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "SiteToolTip",
+      "title": "Octupus - İşin Olsun - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Pazarlama%20ve%20%C3%9Cr%C3%BCn%20Y%C3%B6netimi/%C4%B0%C5%9Fin%20Olsun/Octupus%20-%20%C4%B0%C5%9Fin%20Olsun",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_01_SiteToolTip_1780573330.png",
+      "visible_text": "Skip to content | ... | Home | Pazarlama ve Ürün Yönetimi | İşin Olsun | Octupus - İşin Olsun | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    },
+    {
+      "tab_name": "Hata Durumu",
+      "title": "Octupus - İşin Olsun - Power BI Report Server",
+      "url": "https://raportal.kariyer.net/home/powerbi/Pazarlama%20ve%20%C3%9Cr%C3%BCn%20Y%C3%B6netimi/%C4%B0%C5%9Fin%20Olsun/Octupus%20-%20%C4%B0%C5%9Fin%20Olsun",
+      "screenshot_path": "C:\\Users\\esra.akinci\\OneDrive - Kariyer.net\\Masaüstü\\AI\\raportal_agent_poc\\dashboard_screenshots\\page_02_Hata_Durumu_1780573330.png",
+      "visible_text": "Skip to content | ... | Home | Pazarlama ve Ürün Yönetimi | İşin Olsun | Octupus - İşin Olsun | Toggle navigation | Search | Settings | My subscriptions | Site settings | Download | Power BI Desktop | Power BI Mobile | Report Builder | Help | Getting started | Community | Developer resources | Migrate to Power BI | About Power BI Report Server | Esra Akıncı | Back | Favorites | Browse | Tiles | List | Show hidden items | Comments | File | Print | Print current page | View | Fit To Width | Fit To Page | Actual size | High contrast colors | None | High contrast #1 | High contrast #2 | High contrast black | High contrast white | Bookmarks pane | Off | Selection pane | Edit in Power BI Desktop | Explore | Show as a table | Show next level | Expand to next level | Drill up | Drill down | Show data point as a table | Refresh",
+      "filters": [],
+      "kpi_values": [],
+      "visual_titles": [
+        "Raportal"
+      ]
+    }
+  ],
+  "error": null
+}

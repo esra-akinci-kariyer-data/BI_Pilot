@@ -677,8 +677,7 @@ def check_authentication():
             {"name": "Dashboard"},
             {"name": "Fix Sorgular"},
             {"name": "İşin Olsun Product Features"},
-            {"name": "PBIX Analizi"},
-            {"name": "Konnekt DNA (Beta)"},
+            {"name": "PBIX DNA Analizi"},
             {"name": "Hakkında"},
         ]
 
@@ -694,8 +693,7 @@ def check_authentication():
                 "Dashboard": "📊",
                 "Fix Sorgular": "⚡",
                 "İşin Olsun Product Features": "🚀",
-                "PBIX Analizi": "📈",
-                "Konnekt DNA (Beta)": "🧬",
+                "PBIX DNA Analizi": "🧬",
                 "Hakkında": "ℹ️"
             }
             icon = icon_map.get(p["name"], "🔵")
@@ -2405,7 +2403,7 @@ def run_konnekt_dna_workflow(item_id, report_name):
             ok_meta, meta = client.get_report_metadata(match['id'])
             if ok_meta:
                 st.session_state.konnekt_result = meta
-                st.session_state.active_page = "Konnekt DNA (Beta)"
+                st.session_state.active_page = "PBIX DNA Analizi"
                 st.rerun()
                 return
 
@@ -2457,8 +2455,11 @@ def run_konnekt_dna_workflow(item_id, report_name):
         with st.spinner("Konnekt API'ye aktarılıyor..."):
             ok, result = client.upload_pbix(pbix_bytes, f"{report_name}.pbix")
             if ok:
+                # If upload was successful, fetch full metadata to ensure we have datasources
+                if isinstance(result, dict) and result.get('id'):
+                    _, result = client.get_report_metadata(result['id'])
                 st.session_state.konnekt_result = result
-                st.session_state.active_page = "Konnekt DNA (Beta)"
+                st.session_state.active_page = "PBIX DNA Analizi"
                 st.rerun()
             else: st.error(f"Konnekt Hatası: {result}")
     else:
@@ -2467,7 +2468,7 @@ def run_konnekt_dna_workflow(item_id, report_name):
 
 def render_konnekt_dna():
     render_premium_header(
-        title_main="Konnekt",
+        title_main="PBIX",
         title_highlight="DNA Analizi",
         subtitle="Power BI Raporlarının Genetik Haritası (DAX, Dataset, Lineage)",
         icon="🧬",
@@ -2536,9 +2537,21 @@ def render_konnekt_dna():
 
             with t_lineage:
                 if srcs:
+                    st.info(f"🔍 {len(srcs)} adet veri kaynağı ve sorgu tespit edildi.")
                     for ds in srcs:
-                        st.markdown(f"**Tip:** `{ds.get('type')}`")
-                        st.code(ds.get('connection_string') or ds.get('query') or ds.get('connectionString') or "Detay yok")
+                        ds_name = ds.get('name') or ds.get('database') or "Veri Kaynağı"
+                        ds_type = ds.get('type', 'Unknown')
+                        with st.expander(f"🔌 {ds_name} ({ds_type})", expanded=True):
+                            # Try to show query or connection info
+                            q = ds.get('query') or ds.get('connection_string') or ds.get('connectionString')
+                            if q:
+                                lang = "sql" if ds_type.lower() in ["sql", "sqlserver", "oracle", "postgresql"] else "powerquery"
+                                st.code(q, language=lang)
+                            
+                            cols = st.columns(3)
+                            if ds.get('server'): cols[0].caption(f"🖥️ Sunucu: {ds['server']}")
+                            if ds.get('database'): cols[1].caption(f"🗄️ Database: {ds['database']}")
+                            if ds.get('authentication_kind'): cols[2].caption(f"🔑 Auth: {ds['authentication_kind']}")
                 else:
                     st.info("Kaynak bilgisi bulunamadı.")
             
@@ -2554,13 +2567,24 @@ def render_konnekt_dna():
         if uploaded_file:
             if st.button("🚀 Manuel Analizi Başlat", type="primary"):
                 with st.spinner("Konnekt API DNA analizi yapılıyor..."):
-                    ok, result = client.upload_pbix(uploaded_file.getvalue(), uploaded_file.name)
+                    # Sanitize filename for API safety
+                    safe_filename = "".join([c if c.isalnum() or c in "._-" else "_" for c in uploaded_file.name])
+                    ok, result = client.upload_pbix(uploaded_file.getvalue(), safe_filename)
                     if ok:
-                        st.session_state.konnekt_result = result
-                        st.success("Analiz tamamlandı!")
-                        st.rerun()
+                        # Ensure we get the full metadata including datasources
+                        if isinstance(result, dict) and result.get('id'):
+                            ok_m, full_meta = client.get_report_metadata(result['id'])
+                            if ok_m: result = full_meta
+                        
+                        if result:
+                            st.session_state.konnekt_result = result
+                            st.success(f"Analiz tamamlandı: {uploaded_file.name}")
+                            time.sleep(1) # Give time to see success message
+                            st.rerun()
+                        else:
+                            st.warning("Analiz başarılı ancak veri dönmedi.")
                     else:
-                        st.error(f"Hata: {result}")
+                        st.error(f"Konnekt API Hatası: {result}")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with tab3:
@@ -3196,7 +3220,7 @@ def render_insights_hub():
                                 except:
                                     st.error("Rapor bilgisi alınamadı.")
                         
-                        if st.button("🧬 Konnekt DNA Analizi (Derin)", use_container_width=True):
+                        if st.button("🧬 PBIX DNA Analizi (Derin)", use_container_width=True):
                             if selected_name:
                                 try:
                                     row = display_df[display_df['Name'] == selected_name].iloc[0]
@@ -3449,9 +3473,7 @@ elif st.session_state.active_page == "Fix Sorgular":
     render_fix_sorgular()
 elif st.session_state.active_page == "İşin Olsun Product Features":
     render_isin_olsun_otomasyonu()
-elif st.session_state.active_page == "PBIX Analizi":
-    render_pbix_analyzer()
-elif st.session_state.active_page == "Konnekt DNA (Beta)":
+elif st.session_state.active_page == "PBIX DNA Analizi":
     render_konnekt_dna()
 else:
     render_about()

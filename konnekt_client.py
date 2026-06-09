@@ -1,9 +1,10 @@
 import requests
 import os
+from dashboard_agent.config import KONNEKT_API_BASE
 
 class KonnektAPIClient:
-    def __init__(self, base_url="https://test-konnekt-api-k8s.kariyer.net"):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url=None):
+        self.base_url = (base_url or KONNEKT_API_BASE).rstrip("/")
         self.upload_url = f"{self.base_url}/api/v1/powerbi/upload"
         self.reports_url = f"{self.base_url}/api/v1/powerbi/reports"
 
@@ -42,8 +43,25 @@ class KonnektAPIClient:
             resp_lineage = requests.get(f"{self.reports_url}/{report_id}/lineage")
             if resp_lineage.status_code == 200:
                 results['lineage'] = resp_lineage.json()
+            
+            # Fetch datasources (SQL queries etc)
+            resp_ds = requests.get(f"{self.reports_url}/{report_id}/datasources")
+            if resp_ds.status_code == 200:
+                results['datasources'] = resp_ds.json()
                 
             return True, results
+        except Exception as e:
+            return False, str(e)
+
+    def get_report_datasources(self, report_id):
+        """
+        Fetches datasources (SQL queries, connection strings) for a report.
+        """
+        try:
+            resp = requests.get(f"{self.reports_url}/{report_id}/datasources")
+            if resp.status_code == 200:
+                return True, resp.json()
+            return False, f"Error: {resp.status_code}"
         except Exception as e:
             return False, str(e)
 

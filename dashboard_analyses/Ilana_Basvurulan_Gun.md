@@ -1,1 +1,1 @@
-**Hata:** Gemini API key girilmedi. Soldan bağlanın.
+**Model Bulunamadı (404):** 'gemini-1.5-flash-latest' bu anahtar için geçerli değil. Lütfen soldan 'Erişilebilir Modelleri Tara' butonuna basın.

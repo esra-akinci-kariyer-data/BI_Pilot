@@ -1,6 +1,7 @@
 from pathlib import Path
 import asyncio
 import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 import html
 import traceback
 import pandas as pd
@@ -616,7 +617,8 @@ def check_authentication():
             {"name": "Raportal Insights Hub"},
             {"name": "Dashboard"},
             {"name": "Fix Sorgular"},
-            {"name": "PBIX Analizi"},
+            {"name": "İşin Olsun Product Features"},
+            {"name": "PBIX DNA Analizi"},
             {"name": "Hakkında"},
         ]
 
@@ -631,7 +633,8 @@ def check_authentication():
                 "Raportal Insights Hub": "🧠",
                 "Dashboard": "📊",
                 "Fix Sorgular": "⚡",
-                "PBIX Analizi": "📈",
+                "İşin Olsun Product Features": "🎯",
+                "PBIX DNA Analizi": "🧬",
                 "Hakkında": "ℹ️"
             }
             icon = icon_map.get(p["name"], "🔵")
@@ -3112,6 +3115,151 @@ def _run_vision_logic(url, headless, sheets, addon):
             traceback.print_exc()
 
 
+def render_product_features():
+    st.markdown('<div class="section-title">🎯 İşin Olsun Product Features</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    
+    # Row 1: Template Info
+    st.markdown("""
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
+        <span style="font-size: 1.5rem;">📋</span>
+        <div>
+            <div style="font-weight: 700; font-size: 1rem;">İşin Olsun Product Features</div>
+            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">BlueCollarDB'den Aday & Firma İstatistikleri</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+    
+    # Row 2: Parameters & Run Button
+    r2_col1, r2_col2 = st.columns([1, 2])
+    with r2_col1:
+        # Input for target date
+        date_input = st.date_input("📅 Hedef Ay", value=datetime.now().replace(day=1) - timedelta(days=1))
+        target_date_str = date_input.strftime("%Y-%m-%d")
+    with r2_col2:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        run_query_btn = st.button("🚀 Sorguları Çalıştır (BlueCollarDB)", type="primary", use_container_width=True)
+
+    # Row 3: Auto Mail
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    m_auto_cols = st.columns([1, 1])
+    with m_auto_cols[0]:
+        auto_mail = st.checkbox("✉️ İşlem Sonrası Otomatik Mail Gönder", value=False)
+    with m_auto_cols[1]:
+        if auto_mail:
+            auto_to = st.text_input("Alıcı E-Posta", placeholder="birsen.bircan@kariyer.net", key="product_auto_to", label_visibility="collapsed")
+        else:
+            auto_to = ""
+            
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # --- RESULTS AREA ---
+    if run_query_btn:
+        try:
+            from isin_olsun_queries import IsinOlsunQueryEngine
+            
+            with st.spinner("BlueCollarDB'ye bağlanılıyor ve sorgular çalıştırılıyor..."):
+                engine = IsinOlsunQueryEngine()
+                dates = engine.calculate_dates(target_date_str)
+                yyyymm = dates['yyyymm']
+                
+                # Run both queries in parallel
+                start_time = time.time()
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    future_aday = executor.submit(engine.run_aday_queries, dates)
+                    future_firma = executor.submit(engine.run_firma_queries, dates)
+                    
+                    aday_data = future_aday.result()
+                    firma_data = future_firma.result()
+                
+                end_time = time.time()
+                
+                # Build results dataframe
+                metrics_data = {
+                    **{"Kategori": ["Aday Metrikleri"] * len(aday_data)},
+                    **{f"Aday - {k}": [v] for k, v in aday_data.items()}
+                }
+                
+                # Create combined results
+                results = {**aday_data, **firma_data}
+                results_df = pd.DataFrame([results])
+                
+                st.success(f"✅ Sorgular başarıyla tamamlandı! ({round(end_time - start_time, 2)} sn) | Dönem: {yyyymm}")
+                
+                # Metrics card
+                st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+                
+                # Display key metrics
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("SMS İzinli Aday", aday_data.get('SMS_İzinliAday', 0), delta=None)
+                col2.metric("Email İzinli Aday", aday_data.get('EMAIL_İzinliAday', 0), delta=None)
+                col3.metric("TCKN Onaylı Aday", aday_data.get('TCKN_OnaylıAday', 0), delta=None)
+                col4.metric("İş Tecrübesi Dolu", aday_data.get('IsTecrubesiDolu', 0), delta=None)
+                
+                st.markdown("---")
+                
+                col5, col6, col7, col8 = st.columns(4)
+                col5.metric("SMS İzinli Firma", firma_data.get('SMS_İzinliFirma', 0), delta=None)
+                col6.metric("Email İzinli Firma", firma_data.get('EMAIL_İzinliFirma', 0), delta=None)
+                col7.metric("TCKN Onaylı Firma", firma_data.get('TCKN_OnaylıFirma', 0), delta=None)
+                col8.metric("VKKN Onaylı Firma", firma_data.get('VKKN_OnaylıFirma', 0), delta=None)
+                
+                # Display all results in table
+                st.markdown("### 📊 Tüm Metriklerin Detayları")
+                st.dataframe(results_df.T, use_container_width=True)
+                
+                # Excel Download
+                try:
+                    excel_data = io.BytesIO()
+                    with pd.ExcelWriter(excel_data, engine='openpyxl') as writer:
+                        results_df.to_excel(writer, index=False, sheet_name='Sonuçlar')
+                    excel_data.seek(0)
+                    
+                    st.download_button(
+                        label="📥 Sonuçları Excel Olarak İndir",
+                        data=excel_data,
+                        file_name=f"İşin_Olsun_Product_Features_{yyyymm}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                except Exception as ex:
+                    st.warning(f"Excel oluşturulamadı: {ex}")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # AUTOMATIC MAIL TRIGGER
+                if auto_mail and auto_to:
+                    with st.spinner("📧 Otomatik mail gönderiliyor..."):
+                        tr_months = {
+                            1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                            7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+                        }
+                        month_name = tr_months.get(int(yyyymm[4:6]), "")
+                        year_short = yyyymm[2:4]
+                        body = f"Merhaba,<br><br>{month_name} '{year_short} dönemi İşin Olsun Product Features raporu ekte sunulmuştur.<br><br>İyi çalışmalar."
+                        subject = f"İşin Olsun Product Features - {month_name} '{year_short}"
+                        
+                        # Create Excel for attachment
+                        excel_attach = io.BytesIO()
+                        with pd.ExcelWriter(excel_attach, engine='openpyxl') as writer:
+                            results_df.to_excel(writer, index=False, sheet_name='Sonuçlar')
+                        excel_attach.seek(0)
+                        
+                        ok, msg = send_outlook_mail(auto_to, subject, body, excel_attach.getvalue(), f"İşin_Olsun_{yyyymm}.xlsx")
+                        if ok:
+                            st.success(f"✅ Sonuçlar {auto_to} adresine otomatik olarak gönderildi.")
+                        else:
+                            st.error(f"❌ Otomatik mail gönderilemedi: {msg}")
+
+        except Exception as e:
+            st.error(f"❌ Hata oluştu: {e}")
+            st.exception(e)
+
 def render_about():
     st.markdown('<div class="section-title">Hakkında</div>', unsafe_allow_html=True)
     st.write("Raportal Agent v2.5 - Kariyer.net için özel olarak geliştirilmiştir.")
@@ -3127,7 +3275,9 @@ elif st.session_state.active_page == "PBIT İndir":
     render_pbit_downloader()
 elif st.session_state.active_page == "Fix Sorgular":
     render_fix_sorgular()
-elif st.session_state.active_page == "PBIX Analizi":
+elif st.session_state.active_page == "İşin Olsun Product Features":
+    render_product_features()
+elif st.session_state.active_page == "PBIX DNA Analizi":
     render_pbix_analyzer()
 else:
     render_about()

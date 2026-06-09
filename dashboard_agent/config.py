@@ -55,3 +55,6 @@ NTLM_DOMAIN: str = os.getenv("NTLM_DOMAIN", "KARIYER")
 # ── LLM ──────────────────────────────────────────────────────────────────────
 GEMINI_MODEL: str = "gemini-1.5-flash"
 PLAYWRIGHT_CHANNEL: str = os.getenv("PLAYWRIGHT_CHANNEL", "msedge")
+
+# ── Konnekt API ──────────────────────────────────────────────────────────────
+KONNEKT_API_BASE: str = os.getenv("KONNEKT_API_BASE", "https://test-konnekt-api-k8s.kariyer.net")
