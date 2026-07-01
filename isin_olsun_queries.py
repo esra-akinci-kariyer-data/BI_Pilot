@@ -1,3 +1,4 @@
+import time
 import pyodbc
 import pandas as pd
 from datetime import datetime, timedelta
@@ -36,14 +37,45 @@ class IsinOlsunQueryEngine:
             "next_month_hyphen": next_month_start.strftime("%Y-%m-%d")
         }
 
-    def _execute_query(self, sql):
-        conn = self.get_connection()
-        if not conn:
-            raise ConnectionError("SVM-DWH01 sunucusuna bağlanılamadı. Lütfen VPN bağlantınızı veya ağ yetkilerinizi kontrol edin.")
-        try:
-            return pd.read_sql(sql, conn)
-        finally:
-            conn.close()
+    def _is_transient_error(self, err):
+        msg = str(err)
+        transient_markers = [
+            "08S01",
+            "10060",
+            "Communication link failure",
+            "TCP Provider",
+            "timeout",
+            "zaman",
+        ]
+        return any(marker.lower() in msg.lower() for marker in transient_markers)
+
+    def _execute_query(self, sql, max_retries=3):
+        last_err = None
+        for attempt in range(1, max_retries + 1):
+            conn = self.get_connection()
+            if not conn:
+                last_err = ConnectionError("SVM-DWH01 sunucusuna bağlanılamadı. Lütfen VPN bağlantınızı veya ağ yetkilerinizi kontrol edin.")
+                if attempt < max_retries:
+                    time.sleep(2 * attempt)
+                    continue
+                raise last_err
+
+            try:
+                conn.timeout = 180
+                return pd.read_sql(sql, conn)
+            except Exception as err:
+                last_err = err
+                if self._is_transient_error(err) and attempt < max_retries:
+                    time.sleep(2 * attempt)
+                    continue
+                raise
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        raise RuntimeError(f"SQL çalıştırılamadı: {last_err}")
 
     def run_aday_queries(self, dates):
         queries = {
@@ -88,7 +120,7 @@ class IsinOlsunQueryEngine:
         }
         
         results = {}
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             future_to_key = {executor.submit(self._execute_query, sql): key for key, sql in queries.items()}
             for future in future_to_key:
                 df = future.result()
@@ -139,7 +171,7 @@ class IsinOlsunQueryEngine:
         }
         
         results = {}
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             future_to_key = {executor.submit(self._execute_query, sql): key for key, sql in queries.items()}
             for future in future_to_key:
                 df = future.result()

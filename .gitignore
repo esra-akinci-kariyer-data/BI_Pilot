@@ -7,3 +7,4 @@ dashboard_screenshots/
 session_outputs/
 .devcontainer/
 scratch/
+.env

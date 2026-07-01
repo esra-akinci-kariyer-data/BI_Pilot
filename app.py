@@ -14,6 +14,10 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from pathlib import Path
 
@@ -35,7 +39,7 @@ from requests_ntlm import HttpNtlmAuth
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from pbi_parser import parse_pbi_file, convert_to_pbit_bytes
 from pbi_robot_engine import trigger_pbi_robot_export
-from dashboard_agent.config import GEMINI_MODEL
+from dashboard_agent.config import ANALYSIS_DIR, GEMINI_MODEL
 from dashboard_agent.analyzer import suggest_report_template
 from dashboard_agent.data_context import get_real_world_entities
 from dashboard_agent.history_manager import save_visionary_request, get_visionary_history, delete_visionary_request
@@ -88,6 +92,144 @@ def save_schedule(template_name, recipient):
         json.dump(schedules, f, indent=4)
     return True, "Zamanlama başarıyla kaydedildi."
 
+
+def _safe_powerbi_name(name: str) -> str:
+    return re.sub(r"[^\w\u00C0-\u017E\-]", "_", str(name)).strip("_")[:80] or "powerbi_report"
+
+
+def persist_powerbi_sync_analysis(source_name: str, source_bytes: bytes, source_path: str | None = None, source_kind: str = "download") -> dict:
+    """Create local JSON/Markdown analysis artifacts for a PBIX/PBIT payload."""
+    parsed = parse_pbi_file(source_bytes, source_name)
+
+    if source_name.lower().endswith(".pbix"):
+        try:
+            pbit_bytes = convert_to_pbit_bytes(source_bytes)
+            if pbit_bytes and pbit_bytes != source_bytes:
+                pbit_meta = parse_pbi_file(pbit_bytes, f"{Path(source_name).stem}.pbit")
+                for key in ("tables", "measures", "m_queries", "data_sources", "relationships", "pages"):
+                    if not parsed.get(key) and pbit_meta.get(key):
+                        parsed[key] = pbit_meta[key]
+                parsed["pbit_payload"] = pbit_bytes
+        except Exception:
+            pass
+
+    output_dir = ANALYSIS_DIR / "powerbi_sync"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    analyzed_at = datetime.now().isoformat(timespec="seconds")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = _safe_powerbi_name(Path(source_name).stem)
+
+    payload = {
+        "source_name": source_name,
+        "source_path": source_path,
+        "source_kind": source_kind,
+        "analyzed_at": analyzed_at,
+        "table_count": len(parsed.get("tables", [])),
+        "measure_count": len(parsed.get("measures", [])),
+        "m_query_count": len(parsed.get("m_queries", {})),
+        "data_source_count": len(parsed.get("data_sources", [])),
+        **parsed,
+    }
+
+    json_path = output_dir / f"{stamp}_{safe_name}.json"
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    md_lines = [
+        f"# Power BI Sync Analizi - {source_name}",
+        "",
+        f"- Analiz Zamanı: {analyzed_at}",
+        f"- Kaynak Türü: {source_kind}",
+        f"- Kaynak Dosya: {source_path or '-'}",
+        f"- Tablo Sayısı: {payload['table_count']}",
+        f"- Ölçü Sayısı: {payload['measure_count']}",
+        f"- M Query Sayısı: {payload['m_query_count']}",
+        f"- Veri Kaynağı Sayısı: {payload['data_source_count']}",
+    ]
+    if payload.get("tables"):
+        md_lines.extend(["", "## Tablolar"])
+        for table in payload["tables"][:50]:
+            table_name = table.get("name", "Adsız Tablo") if isinstance(table, dict) else str(table)
+            md_lines.append(f"- {table_name}")
+    if payload.get("measures"):
+        md_lines.extend(["", "## Ölçüler"])
+        for measure in payload["measures"][:50]:
+            if isinstance(measure, dict):
+                md_lines.append(f"- {measure.get('table', '-')}.{measure.get('name', 'Adsız Ölçü')}")
+
+    md_path = output_dir / f"{stamp}_{safe_name}.md"
+    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+    index_path = output_dir / "sync_index.csv"
+    idx_row = pd.DataFrame([
+        {
+            "analyzed_at": analyzed_at,
+            "source_name": source_name,
+            "source_path": source_path or "",
+            "source_kind": source_kind,
+            "table_count": payload["table_count"],
+            "measure_count": payload["measure_count"],
+            "m_query_count": payload["m_query_count"],
+            "data_source_count": payload["data_source_count"],
+            "json_output": str(json_path),
+            "md_output": str(md_path),
+        }
+    ])
+    if index_path.exists():
+        old = pd.read_csv(index_path, encoding="utf-8-sig")
+        idx_row = pd.concat([old, idx_row], ignore_index=True)
+    idx_row.to_csv(index_path, index=False, encoding="utf-8-sig")
+
+    return {"json_path": str(json_path), "md_path": str(md_path), "payload": payload}
+
+
+def _first_non_empty(row, keys):
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return value
+    return None
+
+
+def _download_powerbi_report_bytes(session: requests.Session, item_id: str, prefer_pbit: bool = True) -> tuple[bool, bytes | None, str]:
+    """Download a single Power BI report as PBIT or PBIX bytes."""
+    pbirs_api_base = "https://raportal.kariyer.net/powerbi/api/v2.0"
+
+    if prefer_pbit:
+        try:
+            er = session.post(
+                f"{pbirs_api_base}/PowerBIReports({item_id})/ExportTo",
+                json={"format": "PBIT", "powerBIReportConfiguration": {"pages": []}},
+                timeout=30,
+            )
+            if er.status_code == 200 and len(er.content) > 100:
+                return True, er.content, "pbit"
+            if er.status_code in (202,):
+                poll = er.headers.get("Operation-Location") or er.headers.get("Location")
+                if poll:
+                    for _ in range(40):
+                        time.sleep(3)
+                        pr = session.get(poll, timeout=30)
+                        if pr.status_code == 200:
+                            status = pr.json().get("status", "")
+                            if status == "Succeeded":
+                                fr = session.get(poll.rstrip("/") + "/files/0", timeout=120)
+                                if fr.status_code == 200 and len(fr.content) > 100:
+                                    return True, fr.content, "pbit"
+                                break
+                            if status == "Failed":
+                                break
+        except Exception as exc:
+            return False, None, f"PBIT export hatası: {exc}"
+
+    try:
+        cr = session.get(f"{pbirs_api_base}/PowerBIReports({item_id})/Content", timeout=120)
+        if cr.status_code == 200 and len(cr.content) > 100:
+            return True, cr.content, "pbix"
+        return False, None, f"PBIX content alınamadı: HTTP {cr.status_code}"
+    except Exception as exc:
+        return False, None, f"PBIX download hatası: {exc}"
+
 # --- DATABASE HELPERS ---
 def get_bidb_connection(server="bidb", database="Raportal"):
     """bidb sunucusuna Windows Authentication ile (SSMS Ayarlarıyla) bağlanır."""
@@ -111,9 +253,10 @@ def get_bidb_connection(server="bidb", database="Raportal"):
             try:
                 conn_str_alt = f"Driver={driver};Server={server};Database={database};Trusted_Connection=yes;Encrypt=no;"
                 return pyodbc.connect(conn_str_alt, timeout=10)
-            except:
+            except Exception:
                 continue
     return None
+
 
 def run_query_on_bidb(sql, server="bidb", database="Raportal"):
     """Verilen SQL sorgusunu bidb üzerinde çalıştırır."""
@@ -125,36 +268,36 @@ def run_query_on_bidb(sql, server="bidb", database="Raportal"):
     finally:
         conn.close()
 
+
 def to_excel(df):
     """DataFrame'i Kariyer.net kurumsal renkleriyle (mor başlık) şık bir Excel'e dönüştürür."""
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Sonuçlar')
-        
-        workbook  = writer.book
+
+        workbook = writer.book
         worksheet = writer.sheets['Sonuçlar']
-        
+
         # Stil tanımları
         header_fill = PatternFill(start_color='8C28E8', end_color='8C28E8', fill_type='solid')
         header_font = Font(color='FFFFFF', bold=True, name='Segoe UI')
         header_alignment = Alignment(horizontal='center', vertical='center')
-        
+
         # Başlık satırını boya ve filtre ekle
-        for col_num, value in enumerate(df.columns.values):
+        for col_num, _ in enumerate(df.columns.values):
             cell = worksheet.cell(row=1, column=col_num + 1)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = header_alignment
-        
+
         # Filtreleri aktif et
         worksheet.auto_filter.ref = worksheet.dimensions
-        
+
         # Sütun genişliklerini içeriğe göre ayarla (Auto-fit)
         for column_cells in worksheet.columns:
             length = max(len(str(cell.value)) for cell in column_cells)
-            # Minimum 12, maksimum 50 genişlik
             worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 12), 50)
-            
+
     return output.getvalue()
             
 APP_CSS = """
@@ -559,11 +702,11 @@ def render_server_status_logic(suffix="pop"):
         st.markdown("### 🔌 SQL Server Login")
         st.caption("BIDB veritabanına bağlanmak için bilgilerinizi girin.")
         
-        sql_user = st.text_input("Windows User", value=st.session_state.get("sb_sql_user", "esra.akinci"), key=f"sb_sql_user_{suffix}")
-        sql_pass = st.text_input("Password", value=st.session_state.get("sb_sql_pass", "Ea93934430."), type="password", key=f"sb_sql_pass_{suffix}")
-        sql_srv  = st.text_input("Server", value=st.session_state.get("sb_sql_srv", "biportal"), key=f"sb_sql_srv_{suffix}")
-        sql_db   = st.text_input("Database", value=st.session_state.get("sb_sql_db", "Raportal"), key=f"sb_sql_db_{suffix}")
-        sql_dom  = st.text_input("Domain", value=st.session_state.get("sb_sql_domain", "KARIYER"), key=f"sb_sql_domain_{suffix}")
+        sql_user = st.text_input("Windows User", value=st.session_state.get("sb_sql_user", os.getenv("SQL_USER", "esra.akinci")), key=f"sb_sql_user_{suffix}")
+        sql_pass = st.text_input("Password", value=st.session_state.get("sb_sql_pass", os.getenv("SQL_PASS", "")), type="password", key=f"sb_sql_pass_{suffix}")
+        sql_srv  = st.text_input("Server", value=st.session_state.get("sb_sql_srv", os.getenv("SQL_SERVER", "biportal")), key=f"sb_sql_srv_{suffix}")
+        sql_db   = st.text_input("Database", value=st.session_state.get("sb_sql_db", os.getenv("SQL_DATABASE", "Raportal")), key=f"sb_sql_db_{suffix}")
+        sql_dom  = st.text_input("Domain", value=st.session_state.get("sb_sql_domain", os.getenv("SQL_DOMAIN", "KARIYER")), key=f"sb_sql_domain_{suffix}")
         
         if st.session_state.biportal_conn:
             if st.button("🛑 Bağlantıyı Kes", use_container_width=True, type="secondary", key=f"sb_sql_disconnect_{suffix}"):
@@ -1973,11 +2116,29 @@ def send_outlook_mail(to, subject, body_html, attachment_bytes=None, attachment_
         import win32com.client as win32
         import tempfile
         
+        log_dir = Path(__file__).resolve().parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        mail_log_path = log_dir / "mail_delivery.log"
+        
+        def _mail_log(message: str):
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(mail_log_path, "a", encoding="utf-8") as lf:
+                lf.write(f"[{ts}] {message}\n")
+        
         outlook = win32.Dispatch('outlook.application')
+        namespace = outlook.GetNamespace('MAPI')
+        sent_folder = namespace.GetDefaultFolder(5)  # olFolderSentMail
+        outbox_folder = namespace.GetDefaultFolder(4)  # olFolderOutbox
         mail = outlook.CreateItem(0)
         mail.To = to
         mail.Subject = subject
         mail.HTMLBody = body_html
+        mail.DeleteAfterSubmit = False
+        mail.SaveSentMessageFolder = sent_folder
+        
+        _mail_log(
+            f"ATTEMPT to={to} subject={subject} sent_folder={sent_folder.Name} outbox_before={outbox_folder.Items.Count}"
+        )
         
         if attachment_bytes:
             tmp_path = os.path.join(tempfile.gettempdir(), attachment_name)
@@ -1986,8 +2147,18 @@ def send_outlook_mail(to, subject, body_html, attachment_bytes=None, attachment_
             mail.Attachments.Add(tmp_path)
             
         mail.Send()
-        return True, "Başarılı"
+        _mail_log(f"SUCCESS to={to} subject={subject} outbox_after={outbox_folder.Items.Count}")
+        return True, "Başarılı (Outlook üzerinden gönderildi)"
     except Exception as e:
+        try:
+            log_dir = Path(__file__).resolve().parent / "logs"
+            log_dir.mkdir(exist_ok=True)
+            mail_log_path = log_dir / "mail_delivery.log"
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(mail_log_path, "a", encoding="utf-8") as lf:
+                lf.write(f"[{ts}] ERROR to={to} subject={subject} err={e}\n")
+        except Exception:
+            pass
         return False, str(e)
 
 def render_fix_sorgular():
@@ -2048,12 +2219,16 @@ def render_fix_sorgular():
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         m_auto_cols = st.columns([1, 1])
         with m_auto_cols[0]:
-            auto_mail = st.checkbox("✉️ İşlem Sonrası Otomatik Mail Gönder", value=False)
+            auto_mail = st.checkbox("✉️ İşlem Sonrası Otomatik Mail Gönder", value=False, key="fix_auto_mail")
         with m_auto_cols[1]:
-            if auto_mail:
-                auto_to = st.text_input("Alıcı E-Posta", placeholder="isminiz@kariyer.net", key="fix_auto_to", label_visibility="collapsed")
-            else:
-                auto_to = ""
+            auto_to_raw = st.text_input(
+                "Alıcı E-Posta",
+                placeholder="isminiz@kariyer.net",
+                key="fix_auto_to",
+                label_visibility="collapsed",
+                disabled=not auto_mail,
+            )
+            auto_to = auto_to_raw if auto_mail else ""
                 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2100,30 +2275,41 @@ def render_fix_sorgular():
                             data=excel_data,
                             file_name=f"FinalCheck_{donem_in}_{int(time.time())}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
+                            use_container_width=True,
                         )
                     except Exception as ex:
                         st.warning(f"Excel oluşturulamadı: {ex}")
                         csv = df_live.to_csv(index=False).encode('utf-8-sig')
                         st.session_state['last_excel_data'] = csv
-                        st.download_button("📥 CSV İndir", data=csv, file_name=f"FinalCheck_{donem_in}.csv", mime="text/csv")
+                        st.download_button(
+                            "📥 CSV İndir",
+                            data=csv,
+                            file_name=f"FinalCheck_{donem_in}.csv",
+                            mime="text/csv",
+                        )
                         excel_data = csv
-                    
+
                     # Save to session
                     st.session_state['last_df_live'] = df_live
                     st.session_state['last_donem'] = donem_in
                     st.session_state['last_tpl_key'] = selected_tpl_key
-                    
+
                     # AUTOMATIC MAIL TRIGGER
-                    if auto_mail and auto_to:
-                        with st.spinner("📧 Otomatik mail gönderiliyor..."):
-                            body = f"Merhaba,<br><br>{selected_tpl_key} sorgu sonuçları {donem_in} dönemi için ekte sunulmuştur.<br><br>İyi çalışmalar."
-                            subject = f"{selected_tpl_key} Sonuçları - {donem_in}"
-                            ok, msg = send_outlook_mail(auto_to, subject, body, excel_data, f"FinalCheck_{donem_in}.xlsx")
-                            if ok:
-                                st.success(f"✅ Sonuçlar {auto_to} adresine otomatik olarak gönderildi.")
-                            else:
-                                st.error(f"❌ Otomatik mail gönderilemedi: {msg}")
+                    if auto_mail:
+                        auto_to_clean = auto_to.strip()
+                        if not auto_to_clean:
+                            st.warning("⚠️ Otomatik mail açık, ancak alıcı e-posta girilmediği için gönderim yapılmadı.")
+                        else:
+                            with st.spinner("📧 Otomatik mail gönderiliyor..."):
+                                body = f"Merhaba,<br><br>{selected_tpl_key} sorgu sonuçları {donem_in} dönemi için ekte sunulmuştur.<br><br>İyi çalışmalar."
+                                subject = f"{selected_tpl_key} Sonuçları - {donem_in}"
+                                ok, msg = send_outlook_mail(auto_to_clean, subject, body, excel_data, f"FinalCheck_{donem_in}.xlsx")
+                                if ok:
+                                    st.success(f"✅ Sonuçlar {auto_to_clean} adresine otomatik olarak gönderildi.")
+                                else:
+                                    st.error(f"❌ Otomatik mail gönderilemedi: {msg}")
+                    else:
+                        st.info("ℹ️ Otomatik mail kapalı olduğu için sorgu çıktısı e-posta ile gönderilmedi.")
 
                     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2197,6 +2383,119 @@ def render_pbix_analyzer():
     # Session state for batch results
     if "batch_results" not in st.session_state:
         st.session_state.batch_results = {} # filename -> metadata_dict
+
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.markdown("### 📂 Katalogdan Çek & Analiz Et")
+    st.caption("Katalogdan bir Power BI raporu seç, PBIRS'ten içeriğini indir ve aynı DNA analizini otomatik üret.")
+
+    cat_df = None
+    cat_col_map = None
+    cat_source = ""
+    catalog_error = None
+    try:
+        if "prof_catalog_df" in st.session_state and st.session_state.prof_catalog_df is not None:
+            cat_df = st.session_state.prof_catalog_df.copy()
+            cat_source = "Raportal Insights Hub"
+        else:
+            cat_df, cat_source = load_metadata()
+        cat_df, cat_col_map = prepare_columns(cat_df)
+        if cat_col_map.get("tip"):
+            cat_df = cat_df[cat_df[cat_col_map["tip"]].astype(str).str.contains("Power BI", case=False, na=False)]
+    except Exception as exc:
+        catalog_error = str(exc)
+
+    selected_row = None
+    cat_prefer_pbit = True
+    with st.form("pbix_catalog_analyze_form", clear_on_submit=False):
+        with st.expander("🔐 Raportal PBIRS Bağlantı Bilgileri", expanded=True):
+            st.caption("Buraya Raportal / PBIRS için kullandığın NTLM hesap bilgileri girilir. GitHub şifresi değildir.")
+            c1, c2, c3 = st.columns([2, 2, 1])
+            with c1:
+                cat_user = st.text_input("Raportal kullanıcı adı", placeholder="esra.akinci", key="pbix_cat_user")
+            with c2:
+                cat_pass = st.text_input("Raportal NTLM şifresi", type="password", key="pbix_cat_pass")
+            with c3:
+                cat_domain = st.text_input("Domain", value="KARIYER", key="pbix_cat_domain")
+
+        if catalog_error:
+            st.info(f"Katalog okunamadı: {catalog_error}. Önce Raportal Insights Hub altında kataloğu yükle.")
+        elif cat_df is None or cat_df.empty:
+            st.info("Power BI kataloğu boş görünüyor. Önce Raportal Insights Hub altında 'Rapor Listesini Getir' butonuna bas ve sonra bu ekrana dön.")
+        else:
+            cat_df = cat_df.copy()
+            cat_df["__label__"] = cat_df.apply(
+                lambda r: f"{r.get(cat_col_map['name'], 'Adsız')} — {str(r.get(cat_col_map['path'], '')).strip('/')}",
+                axis=1,
+            )
+            selected_label = st.selectbox("Katalog raporu", options=cat_df["__label__"].tolist(), key="pbix_cat_report")
+            selected_row = cat_df[cat_df["__label__"] == selected_label].iloc[0]
+            st.caption(f"Katalog kaynağı: {cat_source}")
+
+            c4, c5 = st.columns([1, 1])
+            with c4:
+                cat_prefer_pbit = st.checkbox("Önce PBIT indir", value=True, key="pbix_cat_prefer_pbit")
+            with c5:
+                st.text_input("Seçili rapor yolu", value=str(selected_row.get(cat_col_map["path"], "")), disabled=True, key="pbix_cat_path")
+
+        run_catalog_analysis = st.form_submit_button(
+            "⚡ Katalog Raporunu Analiz Et",
+            type="primary",
+            use_container_width=True,
+        )
+
+    cat_user = (cat_user or "").strip()
+    cat_pass = cat_pass or ""
+    cat_domain = (cat_domain or "KARIYER").strip() or "KARIYER"
+
+    if run_catalog_analysis:
+        if catalog_error:
+            st.error(f"Katalog okunamadı: {catalog_error}")
+        elif selected_row is None:
+            st.error("Katalogdan analiz edilecek rapor bulunamadı.")
+        elif not cat_user or not cat_pass:
+            st.error("Katalog analizi için Raportal kullanıcı adı ve NTLM şifresi zorunlu.")
+        else:
+            item_id = _first_non_empty(selected_row, ["ItemID", "ItemId", "ID", "Id", "ReportId", "ReportID"])
+            if not item_id:
+                st.error("Bu katalog kaydında ItemID bulunamadı; rapor doğrudan indirilemiyor.")
+            else:
+                pbirs_session = create_pbirs_session(cat_user, cat_pass, cat_domain)
+                with st.spinner("PBIRS bağlantısı kuruluyor ve rapor indiriliyor..."):
+                    ok_dl, report_bytes, report_kind = _download_powerbi_report_bytes(pbirs_session, str(item_id), prefer_pbit=cat_prefer_pbit)
+                if not ok_dl or not report_bytes:
+                    st.error(report_kind)
+                else:
+                    try:
+                        analysis_result = persist_powerbi_sync_analysis(
+                            str(selected_row.get(cat_col_map["name"], "catalog_report")),
+                            report_bytes,
+                            source_path=str(selected_row.get(cat_col_map["path"], "")),
+                            source_kind=f"catalog_{report_kind}",
+                        )
+                        payload = analysis_result["payload"]
+                        payload["source_type"] = f"Katalogdan ({report_kind.upper()})"
+                        payload["local_report_path"] = str(selected_row.get(cat_col_map["path"], ""))
+                        st.session_state.batch_results[str(selected_row.get(cat_col_map["name"], "catalog_report"))] = payload
+                        st.success("Katalog raporu indirildi ve DNA analizi oluşturuldu.")
+                        st.download_button(
+                            "📄 JSON Analizi İndir",
+                            data=Path(analysis_result["json_path"]).read_bytes(),
+                            file_name=Path(analysis_result["json_path"]).name,
+                            mime="application/json",
+                            key="pbix_cat_json_dl",
+                        )
+                        st.download_button(
+                            "📝 Markdown Analizi İndir",
+                            data=Path(analysis_result["md_path"]).read_bytes(),
+                            file_name=Path(analysis_result["md_path"]).name,
+                            mime="text/markdown",
+                            key="pbix_cat_md_dl",
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Analiz oluşturulamadı: {exc}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="custom-card">', unsafe_allow_html=True)
     uploaded_files = st.file_uploader("Power BI Raporlarını Seçin (.pbix, .pbit, .bim)", 
@@ -2338,42 +2637,85 @@ def render_pbix_analyzer():
                     if metadata.get("forensic_matches"):
                         st.info("🔍 Adli Tarama: Binary bloklardan veri parçacıkları kurtarıldı.")
 
-                    # DNA Tabs for this specific report
-                    t_pages, t_tables, t_rels, t_measures, t_m, t_src = st.tabs([
-                        "📄 Sayfalar", "📊 Tablalar", "🔗 İlişkiler", "📐 DAX Ölçüleri", "⚡ Power Query", "🔌 Kaynaklar"
-                    ])
-                    
-                    with t_pages:
-                        if metadata.get("pages"):
-                            for p in metadata["pages"]: st.write(f"- {p['name']}")
-                    
-                    with t_tables:
-                        if metadata.get("tables"):
-                            for t in metadata["tables"]:
-                                with st.expander(f"📁 {t['name']}"):
-                                    st.write(", ".join(t['columns']))
-                                    if t.get('partitions'):
-                                        st.code(t['partitions'][0]['query'], language="powerquery")
+                    # Clickable metadata panels for this specific report
+                    sql_items = []
+                    for table in metadata.get("tables", []) or []:
+                        if isinstance(table, dict):
+                            table_name = table.get("name", "Adsız Tablo")
+                            partitions = table.get("partitions", []) or []
+                            if partitions:
+                                for p_idx, partition in enumerate(partitions, 1):
+                                    query = None
+                                    if isinstance(partition, dict):
+                                        query = partition.get("query") or partition.get("source", {}).get("expression")
+                                    if query:
+                                        sql_items.append((f"{table_name} / Partition {p_idx}", str(query)))
+                            else:
+                                cols = ", ".join(table.get("columns", []) or [])
+                                if cols:
+                                    sql_items.append((f"{table_name} / Columns", cols))
 
-                    with t_rels:
-                        if metadata.get("relationships"):
-                            st.table(pd.DataFrame(metadata["relationships"]))
+                    for q_name, q_code in (metadata.get("m_queries", {}) or {}).items():
+                        sql_items.append((f"M Query: {q_name}", str(q_code)))
 
-                    with t_measures:
-                        if metadata.get("measures"):
-                            st.dataframe(pd.DataFrame(metadata["measures"]), use_container_width=True)
-                        if metadata.get("forensic_matches"):
-                            with st.expander("Ham Binary DAX"):
-                                for match in metadata["forensic_matches"]: st.code(match)
+                    dax_items = []
+                    for measure in metadata.get("measures", []) or []:
+                        if isinstance(measure, dict):
+                            m_name = measure.get("name", "Adsız Ölçü")
+                            m_table = measure.get("table", "-")
+                            expr = measure.get("expression", "")
+                            dax_items.append((f"{m_table} / {m_name}", f"{m_table}.{m_name}\n\n{expr}"))
 
-                    with t_m:
-                        if metadata.get("m_queries"):
-                            for q_name, q_code in metadata["m_queries"].items():
-                                with st.expander(f"⚡ {q_name}"): st.code(q_code, language="powerquery")
+                    rel_items = []
+                    for rel in metadata.get("relationships", []) or []:
+                        if isinstance(rel, dict):
+                            left = rel.get("fromTable") or rel.get("sourceTable") or rel.get("leftTable") or rel.get("table") or "?"
+                            left_col = rel.get("fromColumn") or rel.get("sourceColumn") or rel.get("leftColumn") or rel.get("column") or "?"
+                            right = rel.get("toTable") or rel.get("targetTable") or rel.get("rightTable") or rel.get("referencedTable") or "?"
+                            right_col = rel.get("toColumn") or rel.get("targetColumn") or rel.get("rightColumn") or rel.get("referencedColumn") or "?"
+                            rel_items.append((f"{left}.{left_col} → {right}.{right_col}", json.dumps(rel, ensure_ascii=False, indent=2)))
+                        else:
+                            rel_items.append((str(rel), str(rel)))
 
-                    with t_src:
-                        if metadata.get("data_sources"):
-                            for ds in metadata["data_sources"]: st.code(ds)
+                    col_sql, col_dax, col_rel = st.columns(3)
+                    with col_sql:
+                        _render_clickable_item_list(
+                            "SQL / M Sorguları",
+                            sql_items,
+                            state_key=f"{fname}_sql_pick",
+                            detail_language="sql",
+                        )
+
+                    with col_dax:
+                        _render_clickable_item_list(
+                            "DAX Ölçüleri",
+                            dax_items,
+                            state_key=f"{fname}_dax_pick",
+                            detail_language="sql",
+                        )
+
+                    with col_rel:
+                        _render_clickable_item_list(
+                            "İlişkiler",
+                            rel_items,
+                            state_key=f"{fname}_rel_pick",
+                            detail_language="json",
+                        )
+
+                    if metadata.get("forensic_matches"):
+                        with st.expander("Ham Binary DAX"):
+                            for match in metadata["forensic_matches"]:
+                                st.code(match)
+
+                    if metadata.get("pages"):
+                        with st.expander("Sayfalar"):
+                            for p in metadata["pages"]:
+                                st.write(f"- {p['name']}")
+
+                    if metadata.get("data_sources"):
+                        with st.expander("Veri Kaynakları"):
+                            for ds in metadata["data_sources"]:
+                                st.code(ds)
     else:
         # Instructions
         st.markdown("""
@@ -2761,6 +3103,7 @@ def render_pbit_downloader():
         out_dir   = out_root / _Path(rel).parent
         ext       = "pbit" if prefer_pbit else "pbix"
         out_file  = out_dir / f"{_safe(name)}.{ext}"
+        downloaded_bytes = None
 
         progress_bar.progress(i / len(reports), text=f"[{i}/{len(reports)}] {name}")
 
@@ -2783,6 +3126,7 @@ def render_pbit_downloader():
                 )
                 if er.status_code == 200 and len(er.content) > 100:
                     out_file.write_bytes(er.content)
+                    downloaded_bytes = er.content
                     downloaded = True
                 elif er.status_code in (202,):
                     poll = er.headers.get("Operation-Location") or er.headers.get("Location")
@@ -2796,6 +3140,7 @@ def render_pbit_downloader():
                                     fr = pbirs_session.get(poll.rstrip("/") + "/files/0", timeout=120)
                                     if fr.status_code == 200:
                                         out_file.write_bytes(fr.content)
+                                        downloaded_bytes = fr.content
                                         downloaded = True
                                     break
                                 elif st_val == "Failed":
@@ -2810,12 +3155,17 @@ def render_pbit_downloader():
                 cr = pbirs_session.get(f"{PBIRS_API_BASE}/PowerBIReports({rid})/Content", timeout=120)
                 if cr.status_code == 200 and len(cr.content) > 100:
                     pbix_file.write_bytes(cr.content)
+                    downloaded_bytes = cr.content
                     downloaded = True
                     out_file = pbix_file
             except Exception:
                 pass
 
         if downloaded:
+            try:
+                persist_powerbi_sync_analysis(name, downloaded_bytes or out_file.read_bytes(), source_path=str(out_file), source_kind="pbirs_download")
+            except Exception as sync_exc:
+                logs.append(f"! {name}: analiz kaydı oluşturulamadı ({sync_exc})")
             ok += 1
             logs.append(f"✓ {name}")
         else:
@@ -3116,149 +3466,142 @@ def _run_vision_logic(url, headless, sheets, addon):
 
 
 def render_product_features():
-    st.markdown('<div class="section-title">🎯 İşin Olsun Product Features</div>', unsafe_allow_html=True)
-    
-    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-    
-    # Row 1: Template Info
+    TR_MONTHS = {
+        1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+        7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+    }
+
+    # --- Hero ---
     st.markdown("""
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
-        <span style="font-size: 1.5rem;">📋</span>
-        <div>
-            <div style="font-weight: 700; font-size: 1rem;">İşin Olsun Product Features</div>
-            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">BlueCollarDB'den Aday & Firma İstatistikleri</div>
-        </div>
+    <div style="background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%);
+                border-radius: 20px; padding: 2rem 2.5rem; color: white; margin-bottom: 1.5rem;">
+        <div style="font-size: 2rem; font-weight: 900;">🚀 İşin Olsun Aylık Otomasyon</div>
+        <div style="opacity: 0.75; margin-top: 6px;">DWH üzerinden aylık rakamları çeker ve Excel raporunu otomatik doldurur.</div>
     </div>
     """, unsafe_allow_html=True)
-    
-    st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-    
-    # Row 2: Parameters & Run Button
-    r2_col1, r2_col2 = st.columns([1, 2])
-    with r2_col1:
-        # Input for target date
-        date_input = st.date_input("📅 Hedef Ay", value=datetime.now().replace(day=1) - timedelta(days=1))
-        target_date_str = date_input.strftime("%Y-%m-%d")
-    with r2_col2:
-        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        run_query_btn = st.button("🚀 Sorguları Çalıştır (BlueCollarDB)", type="primary", use_container_width=True)
 
-    # Row 3: Auto Mail
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-    m_auto_cols = st.columns([1, 1])
-    with m_auto_cols[0]:
-        auto_mail = st.checkbox("✉️ İşlem Sonrası Otomatik Mail Gönder", value=False)
-    with m_auto_cols[1]:
-        if auto_mail:
-            auto_to = st.text_input("Alıcı E-Posta", placeholder="birsen.bircan@kariyer.net", key="product_auto_to", label_visibility="collapsed")
+    # --- Bölüm 1: Rapor Parametreleri ---
+    st.markdown("### 📊 Rapor Parametreleri")
+
+    # Auto-detect Downloads klasöründen RD-17530 dosyası
+    downloads_dir = Path(os.path.expanduser("~")) / "Downloads"
+    template_candidates = sorted(downloads_dir.glob("*RD-17530*Product Features*.xlsx"))
+    auto_path = str(template_candidates[0]) if template_candidates else r"C:\Users\esra.akinci\Downloads\RD-17530-Kasım Product Features.xlsx"
+
+    template_path = st.text_input(
+        "Excel Dosya Yolu (OneDrive/Yerel)",
+        value=st.session_state.get("pf_template_path", auto_path),
+        key="pf_template_path",
+    )
+
+    # Ay seçimi — default: bir önceki ay
+    prev_month_last_day = datetime.now().replace(day=1) - timedelta(days=1)
+    date_input = st.date_input(
+        "Ay Seç",
+        value=prev_month_last_day,
+        key="pf_date_input",
+    )
+    target_date_str = date_input.strftime("%Y-%m-%d")
+
+    # Bilgi notu
+    from isin_olsun_queries import IsinOlsunQueryEngine as _Eng
+    _dates = _Eng().calculate_dates(target_date_str)
+    _ym = _dates["yyyymm"]
+    _month_label = f"{TR_MONTHS[int(_ym[4:6])]}'{_ym[2:4]}"
+    st.info(f"💡 **Not:** Seçtiğiniz ayın son günü baz alınarak sorgular çalıştırılacaktır. "
+            f"Yeni bir sütun **(Örn: {_month_label})** otomatik olarak eklenecektir.")
+
+    run_btn = st.button("⚡ Sorguları Çalıştır ve Excel'i Doldur", type="primary", use_container_width=True)
+
+    # Session state'te doldurulan dosya bilgisi tutalım
+    if "pf_filled_bytes" not in st.session_state:
+        st.session_state["pf_filled_bytes"] = None
+    if "pf_filled_name" not in st.session_state:
+        st.session_state["pf_filled_name"] = None
+    if "pf_yyyymm" not in st.session_state:
+        st.session_state["pf_yyyymm"] = None
+
+    if run_btn:
+        if not template_path or not os.path.exists(template_path):
+            st.error(f"Dosya bulunamadı: {template_path}")
         else:
-            auto_to = ""
-            
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # --- RESULTS AREA ---
-    if run_query_btn:
-        try:
-            from isin_olsun_queries import IsinOlsunQueryEngine
-            
-            with st.spinner("BlueCollarDB'ye bağlanılıyor ve sorgular çalıştırılıyor..."):
-                engine = IsinOlsunQueryEngine()
-                dates = engine.calculate_dates(target_date_str)
-                yyyymm = dates['yyyymm']
-                
-                # Run both queries in parallel
-                start_time = time.time()
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    future_aday = executor.submit(engine.run_aday_queries, dates)
-                    future_firma = executor.submit(engine.run_firma_queries, dates)
-                    
-                    aday_data = future_aday.result()
-                    firma_data = future_firma.result()
-                
-                end_time = time.time()
-                
-                # Build results dataframe
-                metrics_data = {
-                    **{"Kategori": ["Aday Metrikleri"] * len(aday_data)},
-                    **{f"Aday - {k}": [v] for k, v in aday_data.items()}
-                }
-                
-                # Create combined results
-                results = {**aday_data, **firma_data}
-                results_df = pd.DataFrame([results])
-                
-                st.success(f"✅ Sorgular başarıyla tamamlandı! ({round(end_time - start_time, 2)} sn) | Dönem: {yyyymm}")
-                
-                # Metrics card
-                st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-                
-                # Display key metrics
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("SMS İzinli Aday", aday_data.get('SMS_İzinliAday', 0), delta=None)
-                col2.metric("Email İzinli Aday", aday_data.get('EMAIL_İzinliAday', 0), delta=None)
-                col3.metric("TCKN Onaylı Aday", aday_data.get('TCKN_OnaylıAday', 0), delta=None)
-                col4.metric("İş Tecrübesi Dolu", aday_data.get('IsTecrubesiDolu', 0), delta=None)
-                
-                st.markdown("---")
-                
-                col5, col6, col7, col8 = st.columns(4)
-                col5.metric("SMS İzinli Firma", firma_data.get('SMS_İzinliFirma', 0), delta=None)
-                col6.metric("Email İzinli Firma", firma_data.get('EMAIL_İzinliFirma', 0), delta=None)
-                col7.metric("TCKN Onaylı Firma", firma_data.get('TCKN_OnaylıFirma', 0), delta=None)
-                col8.metric("VKKN Onaylı Firma", firma_data.get('VKKN_OnaylıFirma', 0), delta=None)
-                
-                # Display all results in table
-                st.markdown("### 📊 Tüm Metriklerin Detayları")
-                st.dataframe(results_df.T, use_container_width=True)
-                
-                # Excel Download
-                try:
-                    excel_data = io.BytesIO()
-                    with pd.ExcelWriter(excel_data, engine='openpyxl') as writer:
-                        results_df.to_excel(writer, index=False, sheet_name='Sonuçlar')
-                    excel_data.seek(0)
-                    
-                    st.download_button(
-                        label="📥 Sonuçları Excel Olarak İndir",
-                        data=excel_data,
-                        file_name=f"İşin_Olsun_Product_Features_{yyyymm}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                except Exception as ex:
-                    st.warning(f"Excel oluşturulamadı: {ex}")
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # AUTOMATIC MAIL TRIGGER
-                if auto_mail and auto_to:
-                    with st.spinner("📧 Otomatik mail gönderiliyor..."):
-                        tr_months = {
-                            1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
-                            7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
-                        }
-                        month_name = tr_months.get(int(yyyymm[4:6]), "")
-                        year_short = yyyymm[2:4]
-                        body = f"Merhaba,<br><br>{month_name} '{year_short} dönemi İşin Olsun Product Features raporu ekte sunulmuştur.<br><br>İyi çalışmalar."
-                        subject = f"İşin Olsun Product Features - {month_name} '{year_short}"
-                        
-                        # Create Excel for attachment
-                        excel_attach = io.BytesIO()
-                        with pd.ExcelWriter(excel_attach, engine='openpyxl') as writer:
-                            results_df.to_excel(writer, index=False, sheet_name='Sonuçlar')
-                        excel_attach.seek(0)
-                        
-                        ok, msg = send_outlook_mail(auto_to, subject, body, excel_attach.getvalue(), f"İşin_Olsun_{yyyymm}.xlsx")
-                        if ok:
-                            st.success(f"✅ Sonuçlar {auto_to} adresine otomatik olarak gönderildi.")
-                        else:
-                            st.error(f"❌ Otomatik mail gönderilemedi: {msg}")
+            try:
+                from isin_olsun_queries import IsinOlsunQueryEngine
+                with st.spinner("BlueCollarDB'ye bağlanılıyor, sorgular çalıştırılıyor..."):
+                    engine = IsinOlsunQueryEngine()
+                    dates = engine.calculate_dates(target_date_str)
+                    yyyymm = dates["yyyymm"]
 
-        except Exception as e:
-            st.error(f"❌ Hata oluştu: {e}")
-            st.exception(e)
+                    start_t = time.time()
+                    with ThreadPoolExecutor(max_workers=2) as ex:
+                        f_aday  = ex.submit(engine.run_aday_queries,  dates)
+                        f_firma = ex.submit(engine.run_firma_queries, dates)
+                        aday_data  = f_aday.result()
+                        firma_data = f_firma.result()
+                    elapsed = round(time.time() - start_t, 1)
+
+                st.success(f"✅ Sorgular tamamlandı ({elapsed} sn) — Dönem: {_month_label}")
+
+                with st.spinner("Excel dosyası dolduruluyor..."):
+                    from isin_olsun_filler import fill_isin_olsun_excel
+                    fill_isin_olsun_excel(template_path, target_month=target_date_str)
+                    with open(template_path, "rb") as f:
+                        filled_bytes = f.read()
+
+                st.session_state["pf_filled_bytes"] = filled_bytes
+                st.session_state["pf_filled_name"]  = os.path.basename(template_path)
+                st.session_state["pf_yyyymm"]        = yyyymm
+                st.success(f"📌 Excel başarıyla dolduruldu: {os.path.basename(template_path)}")
+
+            except Exception as e:
+                err_text = str(e)
+                if any(m in err_text for m in ["08S01", "10060", "Communication link failure", "TCP Provider"]):
+                    st.error("❌ BlueCollarDB bağlantısı zaman aşımına uğradı. VPN bağlantınızı kontrol edip tekrar deneyin.")
+                else:
+                    st.error(f"❌ Hata: {e}")
+                    st.exception(e)
+
+    st.markdown("---")
+
+    # --- Bölüm 2: Raporu Mail Olarak Gönder ---
+    st.markdown("### 📧 Raporu Mail Olarak Gönder")
+
+    recipient = st.radio(
+        "Alıcı Seçin",
+        options=["Esra Akıncı (Kendime - Test)", "Birsen Bircan (Asıl Alıcı)"],
+        key="pf_recipient",
+        horizontal=True,
+    )
+    recipient_map = {
+        "Esra Akıncı (Kendime - Test)": "esra.akinci@kariyer.net",
+        "Birsen Bircan (Asıl Alıcı)":   "birsen.bircan@kariyer.net",
+    }
+    recipient_email = recipient_map[recipient]
+
+    mail_btn = st.button("📨 Seçili Kişiye Mail At", use_container_width=True)
+
+    if mail_btn:
+        filled_bytes = st.session_state.get("pf_filled_bytes")
+        filled_name  = st.session_state.get("pf_filled_name")
+        yyyymm       = st.session_state.get("pf_yyyymm")
+
+        if not filled_bytes:
+            st.warning("⚠️ Önce 'Sorguları Çalıştır ve Excel'i Doldur' butonuna basın.")
+        else:
+            month_name = TR_MONTHS.get(int(yyyymm[4:6]), "")
+            year_short = yyyymm[2:4]
+            subject = f"İşin Olsun Product Features - {month_name} '{year_short}"
+            body    = (f"Merhaba,<br><br>"
+                       f"{month_name} '{year_short} dönemi İşin Olsun Product Features raporu ekte sunulmuştur.<br><br>"
+                       f"İyi çalışmalar.")
+
+            with st.spinner(f"📧 Mail gönderiliyor → {recipient_email}"):
+                ok, msg = send_outlook_mail(recipient_email, subject, body, filled_bytes, filled_name)
+
+            if ok:
+                st.success(f"✅ Mail başarıyla gönderildi → {recipient_email}")
+            else:
+                st.error(f"❌ Mail gönderilemedi: {msg}")
 
 def render_about():
     st.markdown('<div class="section-title">Hakkında</div>', unsafe_allow_html=True)

@@ -37,9 +37,10 @@ def fill_isin_olsun_excel(file_path, target_month=None):
     dates = engine.calculate_dates(target_month)
     yyyymm = dates['yyyymm']
     month_title = get_turkish_month_name(yyyymm)
+    month_name = month_title.split("'")[0]  # Extract just "Haziran" from "Haziran'26"
     
     # Run Aday and Firma queries in parallel
-    print("Fetching data from database (Parallel)...")
+    print(f"Fetching data from database for {month_name} ({yyyymm})...")
     with ThreadPoolExecutor(max_workers=2) as executor:
         future_aday = executor.submit(engine.run_aday_queries, dates)
         future_firma = executor.submit(engine.run_firma_queries, dates)
@@ -54,16 +55,21 @@ def fill_isin_olsun_excel(file_path, target_month=None):
     if "Aday" in wb.sheetnames:
         ws = wb["Aday"]
         target_col = None
-        # Search for existing column
+        # Search for existing column with FULL title match (month + year)
         for col in range(2, ws.max_column + 1):
-            if ws.cell(row=2, column=col).value == f"Aday Sayısı ({month_title})":
+            header_val = ws.cell(row=2, column=col).value
+            if header_val and month_title in str(header_val) and "Aday" in str(header_val):
                 target_col = col
+                print(f"Found existing Aday column for {month_title} at col {target_col}: {header_val}")
                 break
         
         if not target_col:
-            target_col = 2
-            while ws.cell(row=2, column=target_col).value is not None:
-                target_col += 1
+            # Add new column at the end of existing data
+            target_col = ws.max_column + 1
+            # Make sure we don't land on an empty gap
+            while target_col > 2 and ws.cell(row=2, column=target_col - 1).value is None:
+                target_col -= 1
+            print(f"Creating new Aday column at col {target_col} for {month_title}")
         
         # Always ensure header style and header text is correct
         header_cell = ws.cell(row=2, column=target_col)
@@ -109,16 +115,20 @@ def fill_isin_olsun_excel(file_path, target_month=None):
     if "İşveren" in wb.sheetnames:
         ws = wb["İşveren"]
         target_col = None
+        # Search for existing column with FULL title match (month + year)
         for col in range(2, ws.max_column + 1):
             header_val = ws.cell(row=2, column=col).value
-            if header_val and (f"Firma Sayısı ({month_title})" in header_val or f"İşveren Sayısı ({month_title})" in header_val):
+            if header_val and month_title in str(header_val) and ("Firma" in str(header_val) or "İşveren" in str(header_val)):
                 target_col = col
+                print(f"Found existing İşveren column for {month_title} at col {target_col}: {header_val}")
                 break
         
         if not target_col:
-            target_col = 2
-            while ws.cell(row=2, column=target_col).value is not None:
-                target_col += 1
+            # Add new column at the end of existing data
+            target_col = ws.max_column + 1
+            while target_col > 2 and ws.cell(row=2, column=target_col - 1).value is None:
+                target_col -= 1
+            print(f"Creating new İşveren column at col {target_col} for {month_title}")
         
         # Always ensure header style and header text is correct (Now "Firma Sayısı")
         header_cell = ws.cell(row=2, column=target_col)
