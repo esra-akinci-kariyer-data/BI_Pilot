@@ -50,6 +50,13 @@ except Exception as e:
     VISION_ENABLED = False
     VISION_ERROR = str(e)
 
+try:
+    from konnekt_client import KonnektAPIClient
+    from konnekt_batch_uploader import render_konnekt_batch_uploader
+    KONNEKT_ENABLED = True
+except Exception as e:
+    KONNEKT_ENABLED = False
+
 # Create temp folder for Robot interaction
 if not os.path.exists("temp_pbix"):
     os.makedirs("temp_pbix")
@@ -95,6 +102,40 @@ def save_schedule(template_name, recipient):
 
 def _safe_powerbi_name(name: str) -> str:
     return re.sub(r"[^\w\u00C0-\u017E\-]", "_", str(name)).strip("_")[:80] or "powerbi_report"
+
+
+def _render_clickable_item_list(title: str, items: list, state_key: str, detail_language: str = "sql"):
+    """
+    Tıklanabilir item listesi - seçilen item'ın detayını göster.
+    items: list of tuples (display_name, detail_content)
+    state_key: Session state key
+    detail_language: "sql" or "json" for code block syntax highlighting
+    """
+    st.markdown(f"#### {title}")
+    
+    if not items:
+        st.info("Veri yok")
+        return
+    
+    # Initialize session state
+    if state_key not in st.session_state:
+        st.session_state[state_key] = None
+    
+    # Buttons for each item
+    cols = st.columns(min(3, len(items)))
+    for idx, (display_name, detail_content) in enumerate(items):
+        col = cols[idx % len(cols)]
+        with col:
+            if st.button(display_name[:30], key=f"{state_key}_{idx}", use_container_width=True):
+                st.session_state[state_key] = idx
+    
+    # Show selected item's detail
+    if st.session_state[state_key] is not None:
+        selected_idx = st.session_state[state_key]
+        if 0 <= selected_idx < len(items):
+            display_name, detail_content = items[selected_idx]
+            st.markdown(f"**Seçilen:** {display_name}")
+            st.code(str(detail_content), language=detail_language)
 
 
 def persist_powerbi_sync_analysis(source_name: str, source_bytes: bytes, source_path: str | None = None, source_kind: str = "download") -> dict:
@@ -977,9 +1018,91 @@ def load_usage_data():
 
 
 @st.cache_data
+def load_metadata_from_database():
+    """
+    Query Raportal database directly for accurate catalog with ItemID.
+    Uses same Type mappings: Type=13 is Power BI, Type=2 is SSRS
+    """
+    try:
+        sql_server = os.getenv("SQL_SERVER", "biportal")
+        sql_user = os.getenv("SQL_USER", "esra.akinci")
+        sql_pass = os.getenv("SQL_PASS", "Ea93934420.")
+        sql_database = os.getenv("SQL_DATABASE", "Raportal")
+        sql_domain = os.getenv("SQL_DOMAIN", "KARIYER")
+        
+        connection_string = (
+            f"Driver={{ODBC Driver 17 for SQL Server}};"
+            f"Server={sql_server};"
+            f"Database={sql_database};"
+            f"UID={sql_domain}\\{sql_user};"
+            f"PWD={sql_pass};"
+            f"Trusted_Connection=yes;"
+        )
+        
+        query = """
+        WITH YetkiBase AS (
+            SELECT DISTINCT C.[ItemID], REPLACE([UserName], N'KARIYER\\', '') AS UserName
+            FROM [Raportal].[dbo].[Catalog] C
+            JOIN PolicyUserRole PR ON C.PolicyID = PR.PolicyID
+            JOIN Users U ON U.UserID = PR.UserID
+            WHERE Type NOT IN (1, 3, 5, 8)
+        ),
+        YetkiSummary AS (
+            SELECT ItemID, STRING_AGG(UserName, CHAR(13)) AS Yetki
+            FROM YetkiBase 
+            GROUP BY ItemID
+        ),
+        RaporlarDetailed AS (
+            SELECT DISTINCT C.[ItemID], 
+                   [Path], [Name], Y.Yetki,
+                   C.[Type],
+                   CASE 
+                       WHEN C.[Type] = 11 THEN 'KPI'
+                       WHEN C.[Type] = 13 THEN 'Power BI'
+                       WHEN C.[Type] = 2 THEN 'SSRS'
+                       ELSE 'Other'
+                   END AS Tip
+            FROM [Raportal].[dbo].[Catalog] C
+            LEFT JOIN YetkiSummary Y ON Y.ItemID = C.ItemID
+            WHERE C.Type NOT IN (1, 3, 5, 8)
+        ),
+        Usage90 AS (
+            SELECT B.[ItemID], 
+                   COUNT(*) AS Kullanim, 
+                   COUNT(DISTINCT A.UserName) AS KullaniciSayisi
+            FROM [dbo].[Catalog] B
+            LEFT JOIN [dbo].[ExecutionLogStorage] A 
+                ON A.[ReportID] = B.[ItemID]
+                AND DATEDIFF(DAY, CONVERT(DATE, A.[TimeStart]), CONVERT(DATE, GETDATE())) <= 90
+            WHERE B.[Type] IN (2, 11, 13)
+            GROUP BY B.[ItemID]
+        )
+        SELECT R.*, ISNULL(U.Kullanim, 0) AS Kullanim, ISNULL(U.KullaniciSayisi, 0) AS KullaniciSayisi
+        FROM RaporlarDetailed R
+        LEFT JOIN Usage90 U ON R.ItemID = U.ItemID
+        ORDER BY R.Name
+        """
+        
+        conn = pyodbc.connect(connection_string, timeout=30)
+        df = pd.read_sql(query, conn)
+        conn.close()
+        
+        return df, "Raportal Database (Direct)"
+        
+    except Exception as e:
+        st.warning(f"⚠️ SQL'den katalog çekilemedi: {str(e)}")
+        return None, None
+
+
 def load_metadata():
     base_dir = Path(__file__).resolve().parent
 
+    # Önce SQL'den çekmeyi deneyelim
+    sql_df, sql_source = load_metadata_from_database()
+    if sql_df is not None and len(sql_df) > 0:
+        return sql_df, sql_source
+    
+    # Fallback: CSV dosyalarından
     preferred_names = [
         "db_exported_catalog_v2.csv",
         "db_exported_catalog.csv",
@@ -2399,8 +2522,26 @@ def render_pbix_analyzer():
         else:
             cat_df, cat_source = load_metadata()
         cat_df, cat_col_map = prepare_columns(cat_df)
-        if cat_col_map.get("tip"):
+        
+        # Power BI raporlarını filtrele (Type = 13 is Power BI, Type = 2 is SSRS)
+        if "Type" in cat_df.columns:
+            cat_df = cat_df[cat_df["Type"].astype(str) == "13"]  # Keep ONLY Type=13 (Power BI)
+        elif "Tip" in cat_df.columns:
+            cat_df = cat_df[cat_df["Tip"].astype(str) == "Power BI"]
+        elif cat_col_map.get("tip"):
             cat_df = cat_df[cat_df[cat_col_map["tip"]].astype(str).str.contains("Power BI", case=False, na=False)]
+        
+        # Debug info
+        if "prof_catalog_df" in st.session_state:
+            with st.expander("🔍 Debug: Katalog Bilgileri"):
+                st.write(f"**Kaynak:** {cat_source}")
+                st.write(f"**Toplam satır (filter öncesi):** {len(st.session_state.prof_catalog_df)}")
+                st.write(f"**Toplam satır (filter sonrası):** {len(cat_df)}")
+                st.write(f"**Columns:** {list(cat_df.columns)}")
+                if len(cat_df) > 0:
+                    st.write(f"**İlk satır:**")
+                    st.json(cat_df.iloc[0].to_dict())
+        
     except Exception as exc:
         catalog_error = str(exc)
 
@@ -2453,7 +2594,13 @@ def render_pbix_analyzer():
         elif selected_row is None:
             st.error("Katalogdan analiz edilecek rapor bulunamadı.")
         elif not cat_user or not cat_pass:
-            st.error("Katalog analizi için Raportal kullanıcı adı ve NTLM şifresi zorunlu.")
+            st.warning("⚠️ PBIRS Bağlantı Bilgileri Eksik")
+            st.info("""
+**Raportal'daki raporu indirmek için kimlik bilgilerine ihtiyaç var. Seçenekler:**
+
+1. **Üstte PBIRS şifresini gir** → Katalogtan rapor indir
+2. **Dosya yükle** → Aşağıda PBIX dosyasını bilgisayarından seç (bunu öneririm)
+            """)
         else:
             item_id = _first_non_empty(selected_row, ["ItemID", "ItemId", "ID", "Id", "ReportId", "ReportID"])
             if not item_id:
@@ -2725,7 +2872,13 @@ def render_pbix_analyzer():
         3. Sistem her dosyayı PBIT'e çevirip DNA analizini yapar.
         4. Sonuçları özet tabloda ve rapor kartlarında inceleyin.
         """)
-
+    
+    # Konnekt Batch Uploader
+    st.markdown('<br>', unsafe_allow_html=True)
+    if KONNEKT_ENABLED:
+        render_konnekt_batch_uploader()
+    else:
+        st.warning("⚠️ Konnekt uploader kullanılamıyor")
 
 
 def _run_agent_in_thread(url: str, username: str, password: str, domain: str, api_key: str, headless: bool = False, model_name: str = None, max_pages: int = 5) -> dict:
